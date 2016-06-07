@@ -45,7 +45,7 @@ def send_log(message):
     f.close()
 
         
-    bot.send_message(-110462515, info["first_name"] + info["last_name"] + " сделал(а) свою ставку")
+    bot.send_message('chat_id', info["first_name"] + info["last_name"] + " сделал(а) свою ставку")
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
