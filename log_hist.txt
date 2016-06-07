@@ -1,0 +1,16 @@
+﻿﻿18:37:13 [sergei_sundukov][Sergei Sundukov][51870379] Txt: Россия-Англия 4:0
+18:44:32 [sergei_sundukov][Sergei Sundukov][51870379] Txt: Россия-Россия 0:0
+18:49:16 [][Мария Стр][201081950] Txt: 1-1
+18:55:48 [][Ekaterina Petrova][222695427] Txt: Аргентина 5:0 Ямайка
+19:06:18 [][Egor Gaydalovich][153657] Txt: Аргентина - Ямайка 5:0
+19:06:39 [][Ekaterina Petrova][222695427] Txt: Россия 7:0 Англия
+19:08:58 [][Alexander Arkhipov][212897341] Txt: Тест
+19:11:49 [][Ilya Komarovskih][48072658] Txt: 3:1 Россия Чемпион!
+19:11:56 [][Nikita Klimachev][102906373] Txt: Россия - Сербия 1:0
+21:05:37 [][Dmitry Strogalshchikov][197682134] Txt: Россия-Франция 3:0
+11:34:38 [dzhioev][Pasha Sergeev][485651] Txt: Тест
+11:56:40 [dzhioev][Pasha Sergeev][485651] Txt: Отмена!!!
+11:57:11 [dzhioev][Pasha Sergeev][485651] Txt: '
+12:07:54 [dzhioev][Sergei Sundukov][485651] Txt: Hv
+17:38:15 [Rezinkina][Zinaida Rezinkina][49619396] Txt: Россия - Англия 1:2
+17:40:24 [Rezinkina][Zinaida Rezinkina][49619396] Txt: Россия - Словакия 1:1
