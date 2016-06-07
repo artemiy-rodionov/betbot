@@ -1,3 +1,3 @@
 # telebot
 
-#bot collecting football predictions for friendly competition
+#telegram bot collecting football predictions for friendly competition
