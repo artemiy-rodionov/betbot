@@ -10,6 +10,7 @@ import sys
 import telebot
 import time
 import urllib3
+import logging
 
 from database import Database
 
@@ -21,6 +22,7 @@ def send_log(message):
         "last_name": message.from_user.last_name,
         "text": message.text
     }
+
 
     if info["last_name"] is not None:
         info["last_name"] = " " + info["last_name"]
@@ -36,21 +38,28 @@ def send_log(message):
     #bot.send_message('chat_id', info["first_name"] + info["last_name"] + " сделал(а) свою ставку")
 
 def main(config):
-  bot = telebot.TeleBot(config['token'])
+  telebot.logger.setLevel(logging.DEBUG)
+  # Threading disabled because it is unsupported by sqlite3
+  bot = telebot.TeleBot(config['token'], threaded=False)
   db = Database(config['db_path'], config['data_dir'])
 
   @bot.message_handler(commands=['start', 'help'])
   def send_welcome(message):
-      msg = bot.send_message(message.chat.id, 'Привет, лудоман! Опять взялся за старое? Просто пиши свои прогнозы на матчи сюда и посмотрим, что из этого получится!')
+    msg = bot.send_message(message.chat.id, 'Привет, лудоман! Опять взялся за старое? Просто пиши свои прогнозы на матчи сюда и посмотрим, что из этого получится!')
 
-  @bot.message_handler(commands=['help'])
-  def send_welcome(message):
-      msg = bot.send_message(message.chat.id, 'Просто пиши свои прогнозы на матчи сюда и посмотрим, что из этого получится!')
+  @bot.message_handler(commands=['bet'])
+  def start_betting(message):
+    pass
 
   @bot.message_handler(content_types=["text"])
   def repeat_all_messages(message): # Название функции не играет никакой роли, в принципе
-      send_log(message)
-      bot.reply_to(message, 'Принято!')
+    id = str(message.from_user.id)
+    name = message.from_user.first_name
+    if message.from_user.last_name:
+      name += ' ' + message.from_user.last_name
+
+    send_log(message)
+    bot.reply_to(message, 'Принято!')
 
   bot.polling(none_stop=True)
 

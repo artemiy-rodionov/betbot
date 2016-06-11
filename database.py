@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 
 import csv
+import datetime
 import os
 import pytz
+import re
 import sqlite3
-from datetime import datetime
 
 def create_csv_reader(iterable):
   return csv.DictReader(filter(lambda row: len(row) > 0 and row[0] != '#',
@@ -12,12 +13,13 @@ def create_csv_reader(iterable):
 
 class Database(object):
   def __init__(self, db_path, data_dir):
-    self.conn = sqlite3.connect(db_path)
+    self.conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES|
+                                                      sqlite3.PARSE_COLNAMES)
     self.teams = Teams(os.path.join(data_dir, Teams.DATA_FILENAME))
     self.matches = Matches(os.path.join(data_dir, Matches.DATA_FILENAME),
                            self.teams)
-    print self.teams
-    print self.matches
+    self.players = Players(self.conn)
+    self.predictions = Predictions(self.conn, self.players, self.matches)
 
 class Team(object):
   def __init__(self, id, name, group):
@@ -65,10 +67,90 @@ class Matches(object):
       for row in create_csv_reader(table):
         team1 = teams.get_team(row['team1'])
         team2 = teams.get_team(row['team2'])
-        time = cest_tz.localize(datetime.strptime(row['time'], '%d %B %Y %H:%M'))
+        time = cest_tz.localize(
+            datetime.datetime.strptime(row['time'], '%d %B %Y %H:%M'))
         time = time.astimezone(pytz.utc)
         self.matches[id] = Match(id, team1, team2, time)
         id += 1
 
   def __str__(self):
      return '\n'.join(str(m) for m in self.matches.values())
+
+class Player(object):
+  def __init__(self, id, name):
+    self.id = id
+    self.name = name
+
+  def __str__(self):
+    return "%s (%s)" % (self.name, self.id)
+
+class Players(object):
+  def __init__(self, conn):
+    self.conn = conn
+    self.conn.execute('''CREATE TABLE IF NOT EXISTS players
+                         (id text, name text)''')
+    self.conn.commit()
+
+  def getOrCreatePlayer(self, id, name=None):
+    res = self.conn.execute('''SELECT name FROM players WHERE id=?''', (id,))
+    rows = [r for r in res]
+    if len(rows) == 0:
+      if name is None:
+        raise Exception('Unknown user %s' % id)
+      self.conn.execute('''INSERT INTO players (id, name) VALUES (?,?)''',
+                        (id, name))
+    else:
+      db_saved_name = rows[0][0]
+      if name is None:
+        name = db_saved_name
+      elif db_saved_name != name:
+        self.conn.execute('''UPDATE players SET name=? WHERE id=?''', (name, id))
+    self.conn.commit()
+    return Player(id, name)
+
+def Result(object):
+  def __init__(self, goals1, goals2, winner):
+    self.goals1 = goals1
+    self.goals2 = goals2
+    self.winner = winner
+
+def adapt_result(result):
+  return "%d - %d (%d)" % (result.goals1, result.goals2, result.winner)
+
+def convert_result(s):
+  m = re.match(r'^([1-9][0-9]+) - ([1-9][0-9]+) \(([012])\)$', s)
+  if m is None:
+    return None
+  return Result(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+sqlite3.register_adapter(Result, adapt_result)
+sqlite3.register_converter('result', convert_result)
+
+class Predictions(object):
+  def __init__(self, conn, players, matches):
+    self.conn = conn
+    self.players = players
+    self.matches = matches
+    self.conn.execute('''CREATE TABLE IF NOT EXISTS predictions
+                         (player_id text,
+                          match_id text,
+                          result result,
+                          time timestamp)''')
+    self.conn.commit()
+
+  def addPrediction(self, player, match, result, time):
+    res = self.conn.execute('''SELECT result, time FROM predictions
+                               WHERE player_id=? and match_id=?''',
+                            (player.id, match.id))
+    rows = [r for r in res]
+    if len(rows) == 0:
+      self.conn.execute('''INSERT INTO predictions
+                           (player_id, match_id, result, timestamp)
+                           values(?, ?, ?, ?)''',
+                        (player.id, match.id, result, time))
+    else:
+      self.conn.execute('''UPDATE predictions SET result=?, timestamp=?
+                           WHERE player_id=?, match_id=?''',
+                        (result, time))
+    self.conn.commit()
+
