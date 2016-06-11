@@ -53,7 +53,7 @@ class Match(object):
     self.time = time
 
   def __str__(self):
-    return "%d: %s - %s (%s)" % \
+    return "%s: %s - %s (%s)" % \
                (self.id, self.team1.id, self.team2.id, self.time)
 
 class Matches(object):
@@ -70,7 +70,7 @@ class Matches(object):
         time = cest_tz.localize(
             datetime.datetime.strptime(row['time'], '%d %B %Y %H:%M'))
         time = time.astimezone(pytz.utc)
-        self.matches[id] = Match(id, team1, team2, time)
+        self.matches[str(id)] = Match(str(id), team1, team2, time)
         id += 1
 
   def __str__(self):
@@ -80,15 +80,18 @@ class Matches(object):
     return sorted([m for m in self.matches.values() if m.time > time],
                   key=lambda m: m.time)
 
+  def getMatch(self, match_id):
+    return self.matches[match_id] if match_id in self.matches else None
+
 
 class Player(object):
   def __init__(self, id, name, first_name):
     self.id = id
     self.name = name
-    self.first_name = name
+    self.first_name = first_name
 
   def __str__(self):
-    return "%s (%s)" % (self.name, self.id)
+    return '%s (%s)' % (self.name, self.id)
 
 class Players(object):
   def __init__(self, conn):
@@ -119,17 +122,20 @@ class Players(object):
     self.conn.commit()
     return Player(id, name, first_name)
 
-def Result(object):
-  def __init__(self, goals1, goals2, winner):
+class Result(object):
+  def __init__(self, goals1, goals2, winner=None):
     self.goals1 = goals1
     self.goals2 = goals2
-    self.winner = winner
+    if winner is None:
+      self.winner = 0 if goals1 == goals2 else (1 if goals1 > goals2 else 2)
+    else:
+      self.winner = winner
 
 def adapt_result(result):
   return "%d - %d (%d)" % (result.goals1, result.goals2, result.winner)
 
 def convert_result(s):
-  m = re.match(r'^([1-9][0-9]+) - ([1-9][0-9]+) \(([012])\)$', s)
+  m = re.match(r'^([1-9][0-9]*) - ([1-9][0-9]*) \(([012])\)$', s)
   if m is None:
     return None
   return Result(int(m.group(1)), int(m.group(2)), int(m.group(3)))
@@ -156,12 +162,12 @@ class Predictions(object):
     rows = [r for r in res]
     if len(rows) == 0:
       self.conn.execute('''INSERT INTO predictions
-                           (player_id, match_id, result, timestamp)
+                           (player_id, match_id, result, time)
                            values(?, ?, ?, ?)''',
                         (player.id, match.id, result, time))
     else:
-      self.conn.execute('''UPDATE predictions SET result=?, timestamp=?
-                           WHERE player_id=?, match_id=?''',
-                        (result, time))
+      self.conn.execute('''UPDATE predictions SET result=?, time=?
+                           WHERE player_id=? AND match_id=?''',
+                        (result, time, player.id, match.id))
     self.conn.commit()
 
