@@ -6,36 +6,20 @@ Created on Sat Jun 04 12:05:50 2016
 """
 
 import json
+import logging
+import pytz
 import sys
 import telebot
 import time
 import urllib3
-import logging
+from datetime import datetime
 
 from database import Database
 
-def send_log(message):
-    info = {
-        "usr_id": str(message.from_user.id),
-        "tag": message.from_user.username,
-        "first_name": message.from_user.first_name,
-        "last_name": message.from_user.last_name,
-        "text": message.text
-    }
-
-
-    if info["last_name"] is not None:
-        info["last_name"] = " " + info["last_name"]
-
-    for i in info:
-        if info[i] is None:
-            info[i] = ""
-
-    time.ctime()
-
-    sys.stdout.write(time.strftime("%X") + " [" + info["tag"] + "][" + info["first_name"] + info["last_name"] + "][" + info["usr_id"] + "] Txt: " + info["text"] + '\n')
-
-    #bot.send_message('chat_id', info["first_name"] + info["last_name"] + " сделал(а) свою ставку")
+BOT_USERNAME = '@delaytevashistavkibot'
+START_MSG = 'Привет, лудоман! Опять взялся за старое? Жми /bet чтобы сделать ставку'
+HELP_MSG = 'Жми /bet чтобы сделать ставку'
+SEND_PRIVATE_MSG = 'Я не принимаем ставки в открытую. Напиши мне личное сообщение (%s)' % BOT_USERNAME
 
 def main(config):
   telebot.logger.setLevel(logging.DEBUG)
@@ -43,23 +27,45 @@ def main(config):
   bot = telebot.TeleBot(config['token'], threaded=False)
   db = Database(config['db_path'], config['data_dir'])
 
-  @bot.message_handler(commands=['start', 'help'])
+  def register_user(user):
+    return db.players.getOrCreatePlayer(user.id, user.first_name, user.last_name)
+
+  @bot.message_handler(commands=['start'])
   def send_welcome(message):
-    msg = bot.send_message(message.chat.id, 'Привет, лудоман! Опять взялся за старое? Просто пиши свои прогнозы на матчи сюда и посмотрим, что из этого получится!')
+    register_user(message.from_user)
+    bot.send_message(message.chat.id, START_MSG)
 
   @bot.message_handler(commands=['bet'])
   def start_betting(message):
-    pass
+    if message.chat.type != 'private':
+      bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
+                       reply_to_message_id=message.id)
+      return
 
-  @bot.message_handler(content_types=["text"])
-  def repeat_all_messages(message): # Название функции не играет никакой роли, в принципе
-    id = str(message.from_user.id)
-    name = message.from_user.first_name
-    if message.from_user.last_name:
-      name += ' ' + message.from_user.last_name
+    register_user(message.from_user)
 
-    send_log(message)
-    bot.reply_to(message, 'Принято!')
+    matches = db.matches.getMatchesAfter(
+                  datetime.fromtimestamp(message.date, pytz.utc))
+    keyboard = telebot.types.InlineKeyboardMarkup(2)
+    msk_tz = pytz.timezone('Europe/Moscow')
+    buttons = []
+    for m in matches:
+      t = m.time.astimezone(msk_tz)
+      #label = "%s - %s %02d.%02d %d:%02d" % \
+      #            (m.team1.id, m.team2.id, t.day, t.month, t.hour, t.minute)
+      label = "%s - %s %02d.%02d" % \
+                  (m.team1.id, m.team2.id, t.day, t.month)
+      button = telebot.types.InlineKeyboardButton(label, callback_data='42')
+      buttons.append(button)
+    keyboard.add(*buttons)
+    bot.send_message(message.chat.id, 'Выбери матч', reply_markup=keyboard)
+
+
+  @bot.message_handler(func=lambda m: True)
+  def help(message):
+    register_user(message.from_user)
+    bot.send_message(message.chat.id, HELP_MSG)
+
 
   bot.polling(none_stop=True)
 

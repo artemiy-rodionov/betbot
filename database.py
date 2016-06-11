@@ -76,10 +76,16 @@ class Matches(object):
   def __str__(self):
      return '\n'.join(str(m) for m in self.matches.values())
 
+  def getMatchesAfter(self, time):
+    return sorted([m for m in self.matches.values() if m.time > time],
+                  key=lambda m: m.time)
+
+
 class Player(object):
-  def __init__(self, id, name):
+  def __init__(self, id, name, first_name):
     self.id = id
     self.name = name
+    self.first_name = name
 
   def __str__(self):
     return "%s (%s)" % (self.name, self.id)
@@ -88,25 +94,30 @@ class Players(object):
   def __init__(self, conn):
     self.conn = conn
     self.conn.execute('''CREATE TABLE IF NOT EXISTS players
-                         (id text, name text)''')
+                         (id text, name text, first_name text)''')
     self.conn.commit()
 
-  def getOrCreatePlayer(self, id, name=None):
+  def getOrCreatePlayer(self, id, first_name=None, last_name=None):
+    name = first_name
+    if name is not None and last_name is not None:
+      name += ' ' + last_name
     res = self.conn.execute('''SELECT name FROM players WHERE id=?''', (id,))
     rows = [r for r in res]
     if len(rows) == 0:
       if name is None:
         raise Exception('Unknown user %s' % id)
-      self.conn.execute('''INSERT INTO players (id, name) VALUES (?,?)''',
-                        (id, name))
+      self.conn.execute('''INSERT INTO players (id, name, first_name)
+                           VALUES (?,?,?)''',
+                        (id, name, first_name))
     else:
       db_saved_name = rows[0][0]
       if name is None:
         name = db_saved_name
       elif db_saved_name != name:
-        self.conn.execute('''UPDATE players SET name=? WHERE id=?''', (name, id))
+        self.conn.execute('''UPDATE players SET name=?, first_name=? WHERE id=?''',
+                          (name, first_name, id))
     self.conn.commit()
-    return Player(id, name)
+    return Player(id, name, first_name)
 
 def Result(object):
   def __init__(self, goals1, goals2, winner):
