@@ -135,7 +135,7 @@ def adapt_result(result):
   return "%d - %d (%d)" % (result.goals1, result.goals2, result.winner)
 
 def convert_result(s):
-  m = re.match(r'^([1-9][0-9]*) - ([1-9][0-9]*) \(([012])\)$', s)
+  m = re.match(r'^([0-9]) - ([0-9]) \(([012])\)$', s)
   if m is None:
     return None
   return Result(int(m.group(1)), int(m.group(2)), int(m.group(3)))
@@ -170,4 +170,15 @@ class Predictions(object):
                            WHERE player_id=? AND match_id=?''',
                         (result, time, player.id, match.id))
     self.conn.commit()
+
+  def getForPlayer(self, player):
+    predictions = []
+    for row in self.conn.execute('''SELECT result, match_id FROM predictions
+                                    WHERE player_id=?''', (player.id,)):
+      res = row[0]
+      match = self.matches.getMatch(row[1])
+      predictions.append((match, res))
+    predictions.sort(key=lambda p: p[0].time)
+    return predictions
+
 

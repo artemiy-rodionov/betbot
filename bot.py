@@ -19,13 +19,14 @@ import inspect
 from database import Database, Result
 
 BOT_USERNAME = '@delaytevashistavkibot'
-HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую.'
+HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую. /mybets, чтобы посмотреть свои ставки'
 START_MSG = u'Привет, лудоман! Опять взялся за старое?\n' + HELP_MSG
 SEND_PRIVATE_MSG = u'Я не принимаю ставки в открытую. Напиши мне личное сообщение (%s).' % BOT_USERNAME
 NAVIGATION_ERROR = u'Сорян, что-то пошло не так в строке %d. Попробуй еще раз.\n' + HELP_MSG
 SCORE_REQUEST = u'Сколько голов забьет %s?'
 TOO_LATE_MSG = u'Уже поздно ставить на этот матч, сорян. Попробуй поставить на другой.\n' + HELP_MSG
 CONFIRMATION = u'Ставка %s (%d) - %s (%d) сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
+NO_BETS_MSG = u'Ты еще не сделал ни одной ставки.\n' + HELP_MSG
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
@@ -70,6 +71,28 @@ def main(config):
     keyboard.add(*buttons)
     bot.send_message(message.chat.id, 'Выбери матч', reply_markup=keyboard)
 
+  @bot.message_handler(commands=['mybets'])
+  def list_my_bets(message):
+    if message.chat.type != 'private':
+      bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
+                       reply_to_message_id=message.message_id)
+      return
+
+    player = register_player(message.from_user)
+    predictions = db.predictions.getForPlayer(player)
+
+    if len(predictions) == 0:
+      bot.send_message(message.chat.id, NO_BETS_MSG)
+      return
+
+    msk_tz = pytz.timezone('Europe/Moscow')
+    lines = []
+    for m, r in predictions:
+      t = m.time.astimezone(msk_tz)
+      lines.append('%02d.%02d %s %d - %d %s' % (t.day, t.month,
+                                                m.team1.name, r.goals1,
+                                                r.goals2, m.team2.name))
+    bot.send_message(message.chat.id, '\n'.join(lines))
 
   @bot.message_handler(func=lambda m: True)
   def help(message):
