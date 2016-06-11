@@ -11,6 +11,8 @@ import telebot
 import time
 import urllib3
 
+from database import Database
+
 def send_log(message):
     info = {
         "usr_id": str(message.from_user.id),
@@ -35,8 +37,9 @@ def send_log(message):
 
 def main(config):
   bot = telebot.TeleBot(config['token'])
+  db = Database(config['db_path'], config['data_dir'])
 
-  @bot.message_handler(commands=['start'])
+  @bot.message_handler(commands=['start', 'help'])
   def send_welcome(message):
       msg = bot.send_message(message.chat.id, 'Привет, лудоман! Опять взялся за старое? Просто пиши свои прогнозы на матчи сюда и посмотрим, что из этого получится!')
 

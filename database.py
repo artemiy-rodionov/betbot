@@ -4,7 +4,7 @@ import csv
 import os
 import pytz
 import sqlite3
-from datatime import datatime
+from datetime import datetime
 
 def create_csv_reader(iterable):
   return csv.DictReader(filter(lambda row: len(row) > 0 and row[0] != '#',
@@ -12,18 +12,23 @@ def create_csv_reader(iterable):
 
 class Database(object):
   def __init__(self, db_path, data_dir):
-    self.conn = sqlite3.connect(path)
+    self.conn = sqlite3.connect(db_path)
     self.teams = Teams(os.path.join(data_dir, Teams.DATA_FILENAME))
     self.matches = Matches(os.path.join(data_dir, Matches.DATA_FILENAME),
                            self.teams)
+    print self.teams
+    print self.matches
 
-def Team(object):
+class Team(object):
   def __init__(self, id, name, group):
     self.id = id
     self.name = name
     self.group = group
 
-def Teams(object):
+  def __str__(self):
+    return "%s (%s) Group %s" % (self.name, self.id, self.group)
+
+class Teams(object):
   DATA_FILENAME = 'teams.csv'
 
   def __init__(self, data_path):
@@ -31,6 +36,9 @@ def Teams(object):
     with open(data_path) as table:
       for row in create_csv_reader(table):
         self.teams[row['id']] = Team(**row)
+
+  def __str__(self):
+     return '\n'.join(str(t) for t in self.teams.values())
 
   def get_team(self, team_id):
     return self.teams[team_id]
@@ -42,6 +50,9 @@ class Match(object):
     self.team2 = team2
     self.time = time
 
+  def __str__(self):
+    return "%d: %s - %s (%s)" % \
+               (self.id, self.team1.id, self.team2.id, self.time)
 
 class Matches(object):
   DATA_FILENAME = 'matches.csv'
@@ -59,3 +70,5 @@ class Matches(object):
         self.matches[id] = Match(id, team1, team2, time)
         id += 1
 
+  def __str__(self):
+     return '\n'.join(str(m) for m in self.matches.values())
