@@ -181,4 +181,13 @@ class Predictions(object):
     predictions.sort(key=lambda p: p[0].time)
     return predictions
 
+  def getForMatch(self, match):
+    predictions = []
+    for row in self.conn.execute('''SELECT player_id, result FROM predictions
+                                    WHERE match_id=?''', (match.id,)):
+      res = row[1]
+      player = self.players.getOrCreatePlayer(row[0])
+      predictions.append((player, res))
+    return predictions
+
 

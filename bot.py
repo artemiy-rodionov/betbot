@@ -5,8 +5,10 @@ Created on Sat Jun 04 12:05:50 2016
 @author: SSundukov
 """
 
+import inspect
 import json
 import logging
+import multiprocessing
 import pytz
 import re
 import sys
@@ -14,7 +16,7 @@ import telebot
 import time
 import urllib3
 from datetime import datetime
-import inspect
+from time import sleep
 
 from database import Database, Result
 
@@ -27,15 +29,40 @@ SCORE_REQUEST = u'Сколько голов забьет %s?'
 TOO_LATE_MSG = u'Уже поздно ставить на этот матч, сорян. Попробуй поставить на другой.\n' + HELP_MSG
 CONFIRMATION = u'Ставка %s (%d) - %s (%d) сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
 NO_BETS_MSG = u'Ты еще не сделал ни одной ставки.\n' + HELP_MSG
+RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
 
+def post_results(config, match_id):
+  print 'Spawned process for match %s' % match_id
+  telebot.logger.setLevel(logging.DEBUG)
+  db = Database(config['db_path'], config['data_dir'])
+  match = db.matches.getMatch(match_id)
+  now = pytz.utc.localize(datetime.utcnow())
+  if now > match.time:
+    delay = 0
+  else:
+    delay = (match.time - now).total_seconds()
+  print 'Going to sleep for %s seconds.' % delay
+  sleep(delay)
+  bot = telebot.TeleBot(config['token'], threaded=False)
+  lines = []
+  for p, r in db.predictions.getForMatch(match):
+    lines.append('_%s_ %d - %d' % (p.name, r.goals1, r.goals2))
+  msg = RESULTS_TITLE % (match.team1.name, match.team2.name) + '\n'.join(lines)
+  bot.send_message(config['group_id'], msg, parse_mode='Markdown')
+
 def main(config):
   telebot.logger.setLevel(logging.DEBUG)
+
+  db = Database(config['db_path'], config['data_dir'])
+  for match in db.matches.getMatchesAfter(pytz.utc.localize(datetime.utcnow())):
+    multiprocessing.Process(
+        target=post_results, args=(config, match.id)).start();
+
   # Threading disabled because it is unsupported by sqlite3
   bot = telebot.TeleBot(config['token'], threaded=False)
-  db = Database(config['db_path'], config['data_dir'])
 
   def register_player(user):
     return db.players.getOrCreatePlayer(user.id, user.first_name, user.last_name)
