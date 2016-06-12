@@ -20,6 +20,8 @@ from time import sleep
 
 from database import Database, Result
 
+MATCHES_PER_PAGE = 7
+
 BOT_USERNAME = '@delaytevashistavkibot'
 HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую. /mybets, чтобы посмотреть свои ставки'
 START_MSG = u'Привет, лудоман! Опять взялся за старое?\n' + HELP_MSG
@@ -30,16 +32,22 @@ TOO_LATE_MSG = u'Уже поздно ставить на этот матч, со
 CONFIRMATION = u'Ставка %s (%d) - %s (%d) сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
 NO_BETS_MSG = u'Ты еще не сделал ни одной ставки.\n' + HELP_MSG
 RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
+CHOOSE_MATCH_TITLE = u'Выбери матч (%d/%d)'
+LEFT_ARROW = u'\u2b05'
+RIGHT_ARROW = u'\u27a1'
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
+
+def utcnow():
+  return pytz.utc.localize(datetime.utcnow())
 
 def post_results(config, match_id):
   print 'Spawned process for match %s' % match_id
   telebot.logger.setLevel(logging.DEBUG)
   db = Database(config['db_path'], config['data_dir'])
   match = db.matches.getMatch(match_id)
-  now = pytz.utc.localize(datetime.utcnow())
+  now = utcnow()
   if now > match.time:
     delay = 0
   else:
@@ -57,15 +65,56 @@ def main(config):
   telebot.logger.setLevel(logging.DEBUG)
 
   db = Database(config['db_path'], config['data_dir'])
-  for match in db.matches.getMatchesAfter(pytz.utc.localize(datetime.utcnow())):
+  for match in db.matches.getMatchesAfter(utcnow()):
     multiprocessing.Process(
         target=post_results, args=(config, match.id)).start();
 
   # Threading disabled because it is unsupported by sqlite3
   bot = telebot.TeleBot(config['token'], threaded=False)
 
-  def register_player(user):
-    return db.players.getOrCreatePlayer(user.id, user.first_name, user.last_name)
+  def register_player(player):
+    return db.players.getOrCreatePlayer(player.id,
+                                        player.first_name,
+                                        player.last_name)
+
+  def create_matches_page(page, player):
+    matches = db.matches.getMatchesAfter(utcnow())
+    matches_number = len(matches)
+    pages_number = (matches_number - 1) / MATCHES_PER_PAGE + 1
+    page = min(page, pages_number - 1)
+    matches = matches[page * MATCHES_PER_PAGE:(page + 1) * MATCHES_PER_PAGE]
+    keyboard = telebot.types.InlineKeyboardMarkup(1)
+    msk_tz = pytz.timezone('Europe/Moscow')
+    predictions = {}
+    for m, r in db.predictions.getForPlayer(player):
+      predictions[m.id] = r
+    for m in matches:
+      t = m.time.astimezone(msk_tz)
+      if m.id in predictions:
+        label = "%s %d - %d %s %02d.%02d %d:%02d" % \
+                    (m.team1.id, predictions[m.id].goals1,
+                     predictions[m.id].goals2, m.team2.id,
+                     t.day, t.month, t.hour, t.minute)
+      else:
+        label = "%s - %s %02d.%02d %d:%02d" % \
+                    (m.team1.id, m.team2.id, t.day, t.month, t.hour, t.minute)
+
+      button = telebot.types.InlineKeyboardButton(label,
+                                                  callback_data='b_%s' % m.id)
+      keyboard.add(button)
+    navs = []
+    if page:
+      navs.append(
+          telebot.types.InlineKeyboardButton(LEFT_ARROW,
+                                             callback_data='l_%d' % (page - 1)))
+    if page != pages_number - 1:
+      navs.append(
+          telebot.types.InlineKeyboardButton(RIGHT_ARROW,
+                                             callback_data='l_%d' % (page + 1)))
+    if len(navs):
+      keyboard.row(*navs)
+    title = CHOOSE_MATCH_TITLE % (page + 1, pages_number)
+    return (title, keyboard)
 
   @bot.message_handler(commands=['start'])
   def send_welcome(message):
@@ -79,24 +128,10 @@ def main(config):
                        reply_to_message_id=message.message_id)
       return
 
-    register_player(message.from_user)
-
-    matches = db.matches.getMatchesAfter(
-                  datetime.fromtimestamp(message.date, pytz.utc))
-    keyboard = telebot.types.InlineKeyboardMarkup(2)
-    msk_tz = pytz.timezone('Europe/Moscow')
-    buttons = []
-    for m in matches:
-      t = m.time.astimezone(msk_tz)
-      #label = "%s - %s %02d.%02d %d:%02d" % \
-      #            (m.team1.id, m.team2.id, t.day, t.month, t.hour, t.minute)
-      label = "%s - %s %02d.%02d" % \
-                  (m.team1.id, m.team2.id, t.day, t.month)
-      button = telebot.types.InlineKeyboardButton(label,
-                                                  callback_data='b_%s' % m.id)
-      buttons.append(button)
-    keyboard.add(*buttons)
-    bot.send_message(message.chat.id, 'Выбери матч', reply_markup=keyboard)
+    player = register_player(message.from_user)
+    title, keyboard = create_matches_page(0, player)
+    bot.send_message(message.chat.id, title,
+                     reply_markup=keyboard)
 
   @bot.message_handler(commands=['mybets'])
   def list_my_bets(message):
@@ -147,7 +182,16 @@ def main(config):
                             message_id=message.message.message_id)
 
     if m is None:
-      on_error(lineno())
+      m = re.match(r'^l_([0-9]+)$', data)
+      if m is None:
+        on_error(lineno())
+        return
+      page = int(m.group(1))
+      title, keyboard = create_matches_page(page, player)
+      bot.edit_message_text(title,
+                            chat_id=message.message.chat.id,
+                            message_id=message.message.message_id,
+                            reply_markup=keyboard)
       return
 
     match = db.matches.getMatch(m.group(1))
@@ -174,7 +218,7 @@ def main(config):
                             reply_markup=keyboard)
       return
 
-    now = pytz.utc.localize(datetime.utcnow())
+    now = utcnow()
     if match.time < now:
       bot.edit_message_text(TOO_LATE_MSG,
                             chat_id=message.message.chat.id,
