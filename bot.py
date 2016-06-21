@@ -27,9 +27,11 @@ HELP_MSG = u'Жми /bet, чтобы сделать новую ставку ил
 START_MSG = u'Привет, лудоман! Опять взялся за старое?\n' + HELP_MSG
 SEND_PRIVATE_MSG = u'Я не принимаю ставки в открытую. Напиши мне личное сообщение (%s).' % BOT_USERNAME
 NAVIGATION_ERROR = u'Сорян, что-то пошло не так в строке %d. Попробуй еще раз.\n' + HELP_MSG
+NO_MATCHES_MSG = u'Не на что ставить, сорян.'
 SCORE_REQUEST = u'Сколько голов забьет %s?'
+WINNER_REQUEST = u'Кто победит по пенальти?'
 TOO_LATE_MSG = u'Уже поздно ставить на этот матч, сорян. Попробуй поставить на другой.\n' + HELP_MSG
-CONFIRMATION = u'Ставка %s (%d) - %s (%d) сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
+CONFIRMATION_MSG = u'Ставка %s (%d) - %s (%d) сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
 NO_BETS_MSG = u'Ты еще не сделал ни одной ставки.\n' + HELP_MSG
 RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
 CHOOSE_MATCH_TITLE = u'Выбери матч (%d/%d)'
@@ -80,6 +82,8 @@ def main(config):
   def create_matches_page(page, player):
     matches = db.matches.getMatchesAfter(utcnow())
     matches_number = len(matches)
+    if matches_number == 0:
+      return None
     pages_number = (matches_number - 1) / MATCHES_PER_PAGE + 1
     page = min(page, pages_number - 1)
     matches = matches[page * MATCHES_PER_PAGE:(page + 1) * MATCHES_PER_PAGE]
@@ -129,7 +133,11 @@ def main(config):
       return
 
     player = register_player(message.from_user)
-    title, keyboard = create_matches_page(0, player)
+    page_to_send = create_matches_page(0, player)
+    if page_to_send is None:
+      bot.send_message(message.chat.id, NO_MATCHES_MSG)
+      return
+    title, keyboard = page_to_send
     bot.send_message(message.chat.id, title,
                      reply_markup=keyboard)
 
@@ -187,7 +195,14 @@ def main(config):
         on_error(lineno())
         return
       page = int(m.group(1))
-      title, keyboard = create_matches_page(page, player)
+
+      page_to_send = create_matches_page(page, player)
+      if page_to_send is None:
+        bot.edit_message_text(NO_MATCHES_MSG,
+                              chat_id=message.message.chat.id,
+                              message_id=message.message.message_id)
+        return
+      title, keyboard = page_to_send
       bot.edit_message_text(title,
                             chat_id=message.message.chat.id,
                             message_id=message.message.message_id,
@@ -229,9 +244,9 @@ def main(config):
     db.predictions.addPrediction(player, match, result, now)
 
     t = match.time.astimezone(pytz.timezone('Europe/Moscow'))
-    msg = CONFIRMATION % (match.team1.name, result.goals1, match.team2.name,
-                          result.goals2, t.day, t.month, t.hour, t.minute,
-                          player.first_name)
+    msg = CONFIRMATION_MSG % (match.team1.name, result.goals1, match.team2.name,
+                              result.goals2, t.day, t.month, t.hour, t.minute,
+                              player.first_name)
     bot.edit_message_text(msg,
                           chat_id=message.message.chat.id,
                           message_id=message.message.message_id)
