@@ -25,18 +25,19 @@ MATCHES_PER_PAGE = 7
 BOT_USERNAME = '@delaytevashistavkibot'
 HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую. /mybets, чтобы посмотреть свои ставки'
 START_MSG = u'Привет, лудоман! Опять взялся за старое?\n' + HELP_MSG
-SEND_PRIVATE_MSG = u'Я не принимаю ставки в открытую. Напиши мне личное сообщение (%s).' % BOT_USERNAME
+SEND_PRIVATE_MSG = u'Tcccc, не пали контору. Напиши мне личное сообщение (%s).' % BOT_USERNAME
 NAVIGATION_ERROR = u'Сорян, что-то пошло не так в строке %d. Попробуй еще раз.\n' + HELP_MSG
 NO_MATCHES_MSG = u'Не на что ставить, сорян.'
 SCORE_REQUEST = u'Сколько голов забьет %s?'
 WINNER_REQUEST = u'Кто победит по пенальти?'
 TOO_LATE_MSG = u'Уже поздно ставить на этот матч, сорян. Попробуй поставить на другой.\n' + HELP_MSG
-CONFIRMATION_MSG = u'Ставка %s (%d) - %s (%d) сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
+CONFIRMATION_MSG = u'Ставка %s %s%d - %d%s %s сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
 NO_BETS_MSG = u'Ты еще не сделал ни одной ставки.\n' + HELP_MSG
 RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
 CHOOSE_MATCH_TITLE = u'Выбери матч (%d/%d)'
 LEFT_ARROW = u'\u2b05'
 RIGHT_ARROW = u'\u27a1'
+BALL = u'\u26bd'
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
@@ -44,22 +45,26 @@ def lineno():
 def utcnow():
   return pytz.utc.localize(datetime.utcnow())
 
-def post_results(config, match_id):
+def post_results(config, match_id, post_now=False):
   print 'Spawned process for match %s' % match_id
   telebot.logger.setLevel(logging.DEBUG)
   db = Database(config['db_path'], config['data_dir'])
   match = db.matches.getMatch(match_id)
-  now = utcnow()
-  if now > match.time:
-    delay = 0
-  else:
-    delay = (match.time - now).total_seconds()
-  print 'Going to sleep for %s seconds.' % delay
-  sleep(delay)
+  if not post_now:
+    now = utcnow()
+    if now > match.time:
+      delay = 0
+    else:
+      delay = (match.time - now).total_seconds()
+    print 'Going to sleep for %s seconds.' % delay
+    sleep(delay)
   bot = telebot.TeleBot(config['token'], threaded=False)
   lines = []
   for p, r in db.predictions.getForMatch(match):
-    lines.append('_%s_ %d - %d' % (p.name, r.goals1, r.goals2))
+    lines.append('_%s_ %s%d - %d%s' % (p.name, BALL if r.penalty_win1() else '',
+                                               r.goals1,
+                                               r.goals2,
+                                               BALL if r.penalty_win2() else ''))
   msg = RESULTS_TITLE % (match.team1.name, match.team2.name) + '\n'.join(lines)
   bot.send_message(config['group_id'], msg, parse_mode='Markdown')
 
@@ -95,9 +100,10 @@ def main(config):
     for m in matches:
       t = m.time.astimezone(msk_tz)
       if m.id in predictions:
-        label = "%s %d - %d %s %02d.%02d %d:%02d" % \
-                    (m.team1.id, predictions[m.id].goals1,
-                     predictions[m.id].goals2, m.team2.id,
+        p = predictions[m.id]
+        label = "%s %s%d - %d%s %s %02d.%02d %d:%02d" % \
+                    (m.team1.id, BALL if p.penalty_win1() else '', p.goals1,
+                     p.goals2, BALL if p.penalty_win2() else '', m.team2.id,
                      t.day, t.month, t.hour, t.minute)
       else:
         label = "%s - %s %02d.%02d %d:%02d" % \
@@ -159,9 +165,9 @@ def main(config):
     lines = []
     for m, r in predictions:
       t = m.time.astimezone(msk_tz)
-      lines.append('%02d.%02d %s %d - %d %s' % (t.day, t.month,
-                                                m.team1.name, r.goals1,
-                                                r.goals2, m.team2.name))
+      lines.append('%02d.%02d %s %s%d - %d%s %s' % (t.day, t.month,
+                       m.team1.name, BALL if r.penalty_win1() else '', r.goals1,
+                       r.goals2, BALL if r.penalty_win2() else '', m.team2.name))
     bot.send_message(message.chat.id, '\n'.join(lines))
 
   @bot.message_handler(func=lambda m: True)
@@ -182,7 +188,8 @@ def main(config):
 
     m = re.match(r'^b_([^_]*)$', data) or \
         re.match(r'^b_([^_]*)_([0-9])$', data) or \
-        re.match(r'^b_([^_]*)_([0-9])_([0-9])$', data)
+        re.match(r'^b_([^_]*)_([0-9])_([0-9])$', data) or \
+        re.match(r'^b_([^_]*)_([0-9])_([0-9])_([12])$', data)
 
     def on_error(line_no):
       bot.edit_message_text(NAVIGATION_ERROR % line_no,
@@ -197,7 +204,7 @@ def main(config):
       page = int(m.group(1))
 
       page_to_send = create_matches_page(page, player)
-      if page_to_send is None:
+      if page is None:
         bot.edit_message_text(NO_MATCHES_MSG,
                               chat_id=message.message.chat.id,
                               message_id=message.message.message_id)
@@ -215,7 +222,9 @@ def main(config):
       on_error(lineno())
       return
 
-    if len(m.groups()) in [1, 2]:
+    args_len = len(m.groups())
+
+    if args_len in [1, 2]:
       def make_button(score):
         cb_data = data + '_%d' % score
         return telebot.types.InlineKeyboardButton(
@@ -226,8 +235,31 @@ def main(config):
               .row(make_button(1), make_button(2), make_button(3))\
               .row(make_button(4), make_button(5), make_button(6))\
               .row(make_button(7), make_button(8), make_button(9))
-      team = match.team1 if len(m.groups()) == 1 else match.team2
+      team = match.team1 if args_len == 1 else match.team2
       bot.edit_message_text(SCORE_REQUEST % team.name,
+                            chat_id=message.message.chat.id,
+                            message_id=message.message.message_id,
+                            reply_markup=keyboard)
+      return
+
+    if args_len == 4:
+      if not match.is_playoff:
+        on_error(lineno())
+        return
+      if m.group(2) != m.group(3):
+        on_error(lineno())
+        return
+      result = Result(int(m.group(2)), int(m.group(3)), int(m.group(4)))
+    else:
+      result = Result(int(m.group(2)), int(m.group(3)))
+
+    if not result.winner and match.is_playoff:
+      keyboard = telebot.types.InlineKeyboardMarkup(1)
+      keyboard.add(telebot.types.InlineKeyboardButton(
+        match.team1.name, callback_data=data + "_1"))
+      keyboard.add(telebot.types.InlineKeyboardButton(
+        match.team2.name, callback_data=data + "_2"))
+      bot.edit_message_text(WINNER_REQUEST,
                             chat_id=message.message.chat.id,
                             message_id=message.message.message_id,
                             reply_markup=keyboard)
@@ -240,13 +272,13 @@ def main(config):
                             message_id=message.message.message_id)
       return
 
-    result = Result(int(m.group(2)), int(m.group(3)))
     db.predictions.addPrediction(player, match, result, now)
 
     t = match.time.astimezone(pytz.timezone('Europe/Moscow'))
-    msg = CONFIRMATION_MSG % (match.team1.name, result.goals1, match.team2.name,
-                              result.goals2, t.day, t.month, t.hour, t.minute,
-                              player.first_name)
+    msg = CONFIRMATION_MSG % (
+         match.team1.name, BALL if result.penalty_win1() else '', result.goals1,
+         result.goals2, BALL if result.penalty_win2() else '', match.team2.name,
+         t.day, t.month, t.hour, t.minute, player.first_name)
     bot.edit_message_text(msg,
                           chat_id=message.message.chat.id,
                           message_id=message.message.message_id)

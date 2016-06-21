@@ -46,11 +46,12 @@ class Teams(object):
     return self.teams[team_id]
 
 class Match(object):
-  def __init__(self, id, team1, team2, time):
+  def __init__(self, id, team1, team2, time, is_playoff):
     self.id = id
     self.team1 = team1
     self.team2 = team2
     self.time = time
+    self.is_playoff = is_playoff
 
   def __str__(self):
     return "%s: %s - %s (%s)" % \
@@ -70,7 +71,8 @@ class Matches(object):
         time = cest_tz.localize(
             datetime.datetime.strptime(row['time'], '%d %B %Y %H:%M'))
         time = time.astimezone(pytz.utc)
-        self.matches[str(id)] = Match(str(id), team1, team2, time)
+        is_playoff = bool(int(row['is_playoff']))
+        self.matches[str(id)] = Match(str(id), team1, team2, time, is_playoff)
         id += 1
 
   def __str__(self):
@@ -130,6 +132,12 @@ class Result(object):
       self.winner = 0 if goals1 == goals2 else (1 if goals1 > goals2 else 2)
     else:
       self.winner = winner
+
+  def penalty_win1(self):
+    return self.goals1 == self.goals2 and self.winner == 1
+
+  def penalty_win2(self):
+    return self.goals1 == self.goals2 and self.winner == 2
 
 def adapt_result(result):
   return "%d - %d (%d)" % (result.goals1, result.goals2, result.winner)
