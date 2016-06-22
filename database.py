@@ -196,6 +196,7 @@ class Predictions(object):
       res = row[1]
       player = self.players.getOrCreatePlayer(row[0])
       predictions.append((player, res))
+    predictions.sort(key=lambda p: p[0].name)
     return predictions
 
 
