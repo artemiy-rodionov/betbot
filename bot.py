@@ -17,6 +17,7 @@ import time
 import urllib3
 from datetime import datetime
 from time import sleep
+from pprint import pprint
 
 from database import Database, Result
 
@@ -24,20 +25,25 @@ MATCHES_PER_PAGE = 7
 
 BOT_USERNAME = '@delaytevashistavkibot'
 HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую. /mybets, чтобы посмотреть свои ставки'
-START_MSG = u'Привет, лудоман! Опять взялся за старое?\n' + HELP_MSG
+START_MSG = u'Привет, %s! Поздравляю, ты в игре!\n'
 SEND_PRIVATE_MSG = u'Tcccc, не пали контору. Напиши мне личное сообщение (%s).' % BOT_USERNAME
 NAVIGATION_ERROR = u'Сорян, что-то пошло не так в строке %d. Попробуй еще раз.\n' + HELP_MSG
-NO_MATCHES_MSG = u'Не на что ставить, сорян.'
+NO_MATCHES_MSG = u'Уже не на что ставить =('
 SCORE_REQUEST = u'Сколько голов забьет %s?'
 WINNER_REQUEST = u'Кто победит по пенальти?'
-TOO_LATE_MSG = u'Уже поздно ставить на этот матч, сорян. Попробуй поставить на другой.\n' + HELP_MSG
+TOO_LATE_MSG = u'Уже поздно ставить на этот матч. Попробуй поставить на другой.\n' + HELP_MSG
 CONFIRMATION_MSG = u'Ставка %s %s%d - %d%s %s сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
-NO_BETS_MSG = u'Ты еще не сделал ни одной ставки.\n' + HELP_MSG
+NO_BETS_MSG = u'Ты еще не сделал(а) ни одной ставки.\n' + HELP_MSG
 RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
 CHOOSE_MATCH_TITLE = u'Выбери матч (%d/%d)'
 LEFT_ARROW = u'\u2b05'
 RIGHT_ARROW = u'\u27a1'
 BALL = u'\u26bd'
+NOT_REGISTERED=u'Ты пока не зарегистрирован(а). Напиши пользователю @dzhioev для получения доступа.'
+ALREADY_REGISTERED=u'%s (%s) уже зарегистрирован(а).'
+REGISTER_SHOULD_BE_REPLY=u'Сообщение о регистрации должно быть ответом.'
+REGISTER_SHOULD_BE_REPLY_TO_FORWARD=u'Сообщение о регистрации должно быть ответом на форвард.'
+REGISTRATION_SUCCESS=u'%s aka %s (%s) успешно зарегистрирован.'
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
@@ -47,7 +53,7 @@ def utcnow():
 
 def post_results(config, match_id, post_now=False):
   print 'Spawned process for match %s' % match_id
-  telebot.logger.setLevel(logging.DEBUG)
+  telebot.logger.setLevel(logging.INFO)
   db = Database(config['db_path'], config['data_dir'])
   match = db.matches.getMatch(match_id)
   if not post_now:
@@ -61,15 +67,15 @@ def post_results(config, match_id, post_now=False):
   bot = telebot.TeleBot(config['token'], threaded=False)
   lines = []
   for p, r in db.predictions.getForMatch(match):
-    lines.append('_%s_ %s%d - %d%s' % (p.name, BALL if r.penalty_win1() else '',
-                                               r.goals1,
-                                               r.goals2,
-                                               BALL if r.penalty_win2() else ''))
+    lines.append('_%s_ %s%d - %d%s' % (p.name(), BALL if r.penalty_win1() else '',
+                                                 r.goals1,
+                                                 r.goals2,
+                                                 BALL if r.penalty_win2() else ''))
   msg = RESULTS_TITLE % (match.team1.name, match.team2.name) + '\n'.join(lines)
   bot.send_message(config['group_id'], msg, parse_mode='Markdown')
 
 def main(config):
-  telebot.logger.setLevel(logging.DEBUG)
+  telebot.logger.setLevel(logging.INFO)
 
   db = Database(config['db_path'], config['data_dir'])
   for match in db.matches.getMatchesAfter(utcnow()):
@@ -80,9 +86,18 @@ def main(config):
   bot = telebot.TeleBot(config['token'], threaded=False)
 
   def register_player(player):
-    return db.players.getOrCreatePlayer(player.id,
-                                        player.first_name,
-                                        player.last_name)
+    assert(not is_registered(player))
+    return db.players.createPlayer(player.id, player.first_name, player.last_name)
+
+  def get_player(player):
+    assert(is_registered(player))
+    return db.players.getPlayer(player.id)
+
+  def is_registered(user):
+    return db.players.isRegistered(user.id)
+
+  def is_admin(user):
+    return db.players.isAdmin(user.id)
 
   def create_matches_page(page, player):
     matches = db.matches.getMatchesAfter(utcnow())
@@ -126,19 +141,36 @@ def main(config):
     title = CHOOSE_MATCH_TITLE % (page + 1, pages_number)
     return (title, keyboard)
 
-  @bot.message_handler(commands=['start'])
-  def send_welcome(message):
-    register_player(message.from_user)
-    bot.send_message(message.chat.id, START_MSG)
+  @bot.message_handler(func=lambda m: m.chat.type != 'private')
+  def on_not_private(message):
+    bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
+                     reply_to_message_id=message.message_id)
+
+  @bot.message_handler(commands=['register'], func=lambda m: is_admin(m.from_user))
+  def register(message):
+    if message.reply_to_message is None:
+      bot.send_message(message.chat.id, REGISTER_SHOULD_BE_REPLY)
+      return
+    if message.reply_to_message.forward_from is None:
+      bot.send_message(message.chat.id, REGISTER_SHOULD_BE_REPLY_TO_FORWARD)
+      return
+    forward_from = message.reply_to_message.forward_from
+    if is_registered(forward_from):
+      player = get_player(forward_from)
+      bot.send_message(message.chat.id, ALREADY_REGISTERED % (player.name(), player.id()))
+      return
+    player = register_player(message.reply_to_message.forward_from)
+    bot.send_message(message.chat.id, REGISTRATION_SUCCESS % (player.name(), player.short_name(),
+                                                              player.id()))
+    bot.send_message(player.id(), START_MSG % player.short_name() + HELP_MSG)
+
+  @bot.message_handler(func=lambda m: not is_registered(m.from_user))
+  def on_not_registered(message):
+    bot.send_message(message.chat.id, NOT_REGISTERED)
 
   @bot.message_handler(commands=['bet'])
   def start_betting(message):
-    if message.chat.type != 'private':
-      bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
-                       reply_to_message_id=message.message_id)
-      return
-
-    player = register_player(message.from_user)
+    player = get_player(message.from_user)
     page_to_send = create_matches_page(0, player)
     if page_to_send is None:
       bot.send_message(message.chat.id, NO_MATCHES_MSG)
@@ -154,7 +186,7 @@ def main(config):
                        reply_to_message_id=message.message_id)
       return
 
-    player = register_player(message.from_user)
+    player = get_player(message.from_user)
     predictions = db.predictions.getForPlayer(player)
 
     if len(predictions) == 0:
@@ -170,20 +202,19 @@ def main(config):
                        r.goals2, BALL if r.penalty_win2() else '', m.team2.name))
     bot.send_message(message.chat.id, '\n'.join(lines))
 
+  # keep last
   @bot.message_handler(func=lambda m: True)
   def help(message):
-    register_player(message.from_user)
     bot.send_message(message.chat.id, HELP_MSG)
 
-  # l_<page> (not implemented, needed for pages navigation)
+  # l_<page>
   # b_<match_id>
   # b_<match_id>_<goals1>
   # b_<match_id>_<goals1>_<goals2>
-  # b_<match_id>_<goals1>_<goals2>_<winner> (not implemented,
-  #                                          needed for playoff)
+  # b_<match_id>_<goals1>_<goals2>_<winner>
   @bot.callback_query_handler(lambda m: True)
   def handle_navigation(message):
-    player = register_player(message.from_user)
+    player = get_player(message.from_user)
     data = message.data or ''
 
     m = re.match(r'^b_([^_]*)$', data) or \
@@ -278,7 +309,7 @@ def main(config):
     msg = CONFIRMATION_MSG % (
          match.team1.name, BALL if result.penalty_win1() else '', result.goals1,
          result.goals2, BALL if result.penalty_win2() else '', match.team2.name,
-         t.day, t.month, t.hour, t.minute, player.first_name)
+         t.day, t.month, t.hour, t.minute, player.short_name())
     bot.edit_message_text(msg,
                           chat_id=message.message.chat.id,
                           message_id=message.message.message_id)

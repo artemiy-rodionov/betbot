@@ -87,42 +87,59 @@ class Matches(object):
 
 
 class Player(object):
-  def __init__(self, id, name, first_name):
-    self.id = id
-    self.name = name
-    self.first_name = first_name
+  def __init__(self, id, first_name, last_name, display_name):
+    self._id = id
+    self._first_name = first_name
+    self._last_name = last_name
+    self._display_name = display_name
+
+  def id(self):
+    return self._id
+
+  def name(self):
+    if self._display_name is not None:
+      return self._display_name
+    if self._first_name and self._last_name:
+      return '%s %s' % (self._first_name, self._last_name)
+    return self._first_name if self._first_name is not None else \
+           self._last_name if self._last_name is not None else \
+           '<UNKNOWN>'
+
+  def short_name(self):
+    return self._first_name if self._first_name is not None else \
+           self._last_name if self._last_name is not None else \
+           self._display_name if self._display_name is not None else \
+           '<UNKNOWN>'
 
   def __str__(self):
-    return '%s (%s)' % (self.name, self.id)
+    return '%s (%s)' % (self.name(), self.id())
 
 class Players(object):
   def __init__(self, conn):
     self.conn = conn
     self.conn.execute('''CREATE TABLE IF NOT EXISTS players
-                         (id text, name text, first_name text)''')
+                         (id text, first_name text, last_name text, display_name text)''')
     self.conn.commit()
 
-  def getOrCreatePlayer(self, id, first_name=None, last_name=None):
-    name = first_name
-    if name is not None and last_name is not None:
-      name += ' ' + last_name
-    res = self.conn.execute('''SELECT name FROM players WHERE id=?''', (id,))
-    rows = [r for r in res]
-    if len(rows) == 0:
-      if name is None:
-        raise Exception('Unknown user %s' % id)
-      self.conn.execute('''INSERT INTO players (id, name, first_name)
-                           VALUES (?,?,?)''',
-                        (id, name, first_name))
-    else:
-      db_saved_name = rows[0][0]
-      if name is None:
-        name = db_saved_name
-      elif db_saved_name != name:
-        self.conn.execute('''UPDATE players SET name=?, first_name=? WHERE id=?''',
-                          (name, first_name, id))
+  def getPlayer(self, id):
+    res = self.conn.execute('''SELECT first_name, last_name, display_name
+                               FROM players WHERE id=?''', (id,)).fetchone()
+    if res is None:
+      return None
+    return Player(id, res[0], res[1], res[2])
+
+  def createPlayer(self, id, first_name, last_name):
+    self.conn.execute('''INSERT INTO players (id, first_name, last_name, display_name)
+                         VALUES (?,?,?,?)''',
+                      (id, first_name, last_name, None))
     self.conn.commit()
-    return Player(id, name, first_name)
+    return self.getPlayer(id)
+
+  def isRegistered(self, id):
+    return self.getPlayer(id) is not None
+
+  def isAdmin(self, id):
+    return id == 485651
 
 class Result(object):
   def __init__(self, goals1, goals2, winner=None):
@@ -166,23 +183,23 @@ class Predictions(object):
   def addPrediction(self, player, match, result, time):
     res = self.conn.execute('''SELECT result, time FROM predictions
                                WHERE player_id=? and match_id=?''',
-                            (player.id, match.id))
+                            (player.id(), match.id))
     rows = [r for r in res]
     if len(rows) == 0:
       self.conn.execute('''INSERT INTO predictions
                            (player_id, match_id, result, time)
                            values(?, ?, ?, ?)''',
-                        (player.id, match.id, result, time))
+                        (player.id(), match.id, result, time))
     else:
       self.conn.execute('''UPDATE predictions SET result=?, time=?
                            WHERE player_id=? AND match_id=?''',
-                        (result, time, player.id, match.id))
+                        (result, time, player.id(), match.id))
     self.conn.commit()
 
   def getForPlayer(self, player):
     predictions = []
     for row in self.conn.execute('''SELECT result, match_id FROM predictions
-                                    WHERE player_id=?''', (player.id,)):
+                                    WHERE player_id=?''', (player.id(),)):
       res = row[0]
       match = self.matches.getMatch(row[1])
       predictions.append((match, res))
