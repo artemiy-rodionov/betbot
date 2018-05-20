@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 Created on Sat Jun 04 12:05:50 2016
@@ -17,7 +18,6 @@ import time
 import urllib3
 from datetime import datetime
 from time import sleep
-from pprint import pprint
 
 from database import Database, Result
 
@@ -54,7 +54,7 @@ def utcnow():
 def post_results(config, match_id, post_now=False):
   print 'Spawned process for match %s' % match_id
   telebot.logger.setLevel(logging.INFO)
-  db = Database(config['db_path'], config['data_dir'])
+  db = Database(config)
   match = db.matches.getMatch(match_id)
   if not post_now:
     now = utcnow()
@@ -77,7 +77,7 @@ def post_results(config, match_id, post_now=False):
 def main(config):
   telebot.logger.setLevel(logging.INFO)
 
-  db = Database(config['db_path'], config['data_dir'], config['admin_id'])
+  db = Database(config)
   for match in db.matches.getMatchesAfter(utcnow()):
     multiprocessing.Process(
         target=post_results, args=(config, match.id)).start();
@@ -319,4 +319,4 @@ def main(config):
 if __name__ == '__main__':
   with open(sys.argv[1]) as config_file:
     config = json.load(config_file)
-  main(config)
+  sys.exit(main(config))

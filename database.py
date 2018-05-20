@@ -12,13 +12,12 @@ def create_csv_reader(iterable):
                                iterable))
 
 class Database(object):
-  def __init__(self, db_path, data_dir, admin_id):
-    self.conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES|
-                                                      sqlite3.PARSE_COLNAMES)
-    self.teams = Teams(os.path.join(data_dir, Teams.DATA_FILENAME))
-    self.matches = Matches(os.path.join(data_dir, Matches.DATA_FILENAME),
-                           self.teams)
-    self.players = Players(self.conn, admin_id)
+  def __init__(self, config):
+    self.conn = sqlite3.connect(config['base_file'],
+                                detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
+    self.teams = Teams(os.path.join(config['cache_dir'], Teams.DATA_FILENAME))
+    self.matches = Matches(os.path.join(config['cache_dir'], Matches.DATA_FILENAME), self.teams)
+    self.players = Players(self.conn, config['admin_id'])
     self.predictions = Predictions(self.conn, self.players, self.matches)
 
 class Team(object):
