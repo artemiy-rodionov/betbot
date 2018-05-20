@@ -77,7 +77,7 @@ def post_results(config, match_id, post_now=False):
 def main(config):
   telebot.logger.setLevel(logging.INFO)
 
-  db = Database(config['db_path'], config['data_dir'])
+  db = Database(config['db_path'], config['data_dir'], config['admin_id'])
   for match in db.matches.getMatchesAfter(utcnow()):
     multiprocessing.Process(
         target=post_results, args=(config, match.id)).start();

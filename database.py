@@ -12,13 +12,13 @@ def create_csv_reader(iterable):
                                iterable))
 
 class Database(object):
-  def __init__(self, db_path, data_dir):
+  def __init__(self, db_path, data_dir, admin_id):
     self.conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES|
                                                       sqlite3.PARSE_COLNAMES)
     self.teams = Teams(os.path.join(data_dir, Teams.DATA_FILENAME))
     self.matches = Matches(os.path.join(data_dir, Matches.DATA_FILENAME),
                            self.teams)
-    self.players = Players(self.conn)
+    self.players = Players(self.conn, admin_id)
     self.predictions = Predictions(self.conn, self.players, self.matches)
 
 class Team(object):
@@ -103,22 +103,23 @@ class Player(object):
       return '%s %s' % (self._first_name, self._last_name)
     return self._first_name if self._first_name is not None else \
            self._last_name if self._last_name is not None else \
-           '<UNKNOWN>'
+           '<id: %d>' % self._id
 
   def short_name(self):
     return self._first_name if self._first_name is not None else \
            self._last_name if self._last_name is not None else \
            self._display_name if self._display_name is not None else \
-           '<UNKNOWN>'
+           '<id: %d>' % self._id
 
   def __str__(self):
-    return '%s (%s)' % (self.name(), self.id())
+    return '%s (%d)' % (self.name(), self.id())
 
 class Players(object):
-  def __init__(self, conn):
+  def __init__(self, conn, admin_id):
     self.conn = conn
+    self.admin_id = admin_id
     self.conn.execute('''CREATE TABLE IF NOT EXISTS players
-                         (id text, first_name text, last_name text, display_name text)''')
+                         (id integer, first_name text, last_name text, display_name text)''')
     self.conn.commit()
 
   def getPlayer(self, id):
@@ -139,7 +140,7 @@ class Players(object):
     return self.getPlayer(id) is not None
 
   def isAdmin(self, id):
-    return id == 485651
+    return id == self.admin_id
 
 class Result(object):
   def __init__(self, goals1, goals2, winner=None):
@@ -174,7 +175,7 @@ class Predictions(object):
     self.players = players
     self.matches = matches
     self.conn.execute('''CREATE TABLE IF NOT EXISTS predictions
-                         (player_id text,
+                         (player_id integer,
                           match_id text,
                           result result,
                           time timestamp)''')
