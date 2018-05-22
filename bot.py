@@ -9,15 +9,12 @@ Created on Sat Jun 04 12:05:50 2016
 import inspect
 import json
 import logging
-import multiprocessing
 import pytz
 import re
 import sys
 import telebot
-import time
-import urllib3
+import argparse
 from datetime import datetime
-from time import sleep
 
 from database import Database, Result
 
@@ -32,7 +29,7 @@ NO_MATCHES_MSG = u'Уже не на что ставить =('
 SCORE_REQUEST = u'Сколько голов забьет %s?'
 WINNER_REQUEST = u'Кто победит по пенальти?'
 TOO_LATE_MSG = u'Уже поздно ставить на этот матч. Попробуй поставить на другой.\n' + HELP_MSG
-CONFIRMATION_MSG = u'Ставка %s %s%d - %d%s %s сделана. Начало матча %02d.%02d в %d:%02d по Москве. Удачи, %s!\n' + HELP_MSG
+CONFIRMATION_MSG = u'Ставка %s%s %s%d - %d%s %s%s сделана %s. Начало матча %s по Москве. Удачи, %s!\n' + HELP_MSG
 NO_BETS_MSG = u'Ты еще не сделал(а) ни одной ставки.\n' + HELP_MSG
 RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
 CHOOSE_MATCH_TITLE = u'Выбери матч (%d/%d)'
@@ -74,14 +71,14 @@ def post_results(config, match_id, post_now=False):
   msg = RESULTS_TITLE % (match.team1.name, match.team2.name) + '\n'.join(lines)
   bot.send_message(config['group_id'], msg, parse_mode='Markdown')
 
-def main(config):
-  telebot.logger.setLevel(logging.INFO)
-
+def main(config, just_dump):
   db = Database(config)
-  for match in db.matches.getMatchesAfter(utcnow()):
-    multiprocessing.Process(
-        target=post_results, args=(config, match.id)).start();
+  if just_dump:
+    print(str(db.teams))
+    print(str(db.matches))
+    return
 
+  telebot.logger.setLevel(logging.INFO)
   # Threading disabled because it is unsupported by sqlite3
   bot = telebot.TeleBot(config['token'], threaded=False)
 
@@ -111,21 +108,23 @@ def main(config):
     msk_tz = pytz.timezone('Europe/Moscow')
     predictions = {}
     for m, r in db.predictions.getForPlayer(player):
-      predictions[m.id] = r
+      predictions[m.id()] = r
     for m in matches:
-      t = m.time.astimezone(msk_tz)
-      if m.id in predictions:
-        p = predictions[m.id]
-        label = "%s %s%d - %d%s %s %02d.%02d %d:%02d" % \
-                    (m.team1.id, BALL if p.penalty_win1() else '', p.goals1,
-                     p.goals2, BALL if p.penalty_win2() else '', m.team2.id,
-                     t.day, t.month, t.hour, t.minute)
+      start_time_str = m.start_time().astimezone(msk_tz).strftime('%d.%m %H:%M')
+      if m.id() in predictions:
+        p = predictions[m.id()]
+        label = u'%s: %s%s %s%d - %d%s %s%s %s' % \
+                    (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
+                     BALL if p.penalty_win1() else '', p.goals(0), p.goals(1),
+                     BALL if p.penalty_win2() else '', m.team(1).short_name(), m.team(1).flag(),
+                     start_time_str)
       else:
-        label = "%s - %s %02d.%02d %d:%02d" % \
-                    (m.team1.id, m.team2.id, t.day, t.month, t.hour, t.minute)
+        label = u'%s: %s%s - %s%s %s' % \
+                    (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
+                     m.team(1).short_name(), m.team(1).flag(), start_time_str)
 
       button = telebot.types.InlineKeyboardButton(label,
-                                                  callback_data='b_%s' % m.id)
+                                                  callback_data='b_%s' % m.id())
       keyboard.add(button)
     navs = []
     if page:
@@ -181,11 +180,6 @@ def main(config):
 
   @bot.message_handler(commands=['mybets'])
   def list_my_bets(message):
-    if message.chat.type != 'private':
-      bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
-                       reply_to_message_id=message.message_id)
-      return
-
     player = get_player(message.from_user)
     predictions = db.predictions.getForPlayer(player)
 
@@ -193,13 +187,12 @@ def main(config):
       bot.send_message(message.chat.id, NO_BETS_MSG)
       return
 
-    msk_tz = pytz.timezone('Europe/Moscow')
     lines = []
     for m, r in predictions:
-      t = m.time.astimezone(msk_tz)
-      lines.append('%02d.%02d %s %s%d - %d%s %s' % (t.day, t.month,
-                       m.team1.name, BALL if r.penalty_win1() else '', r.goals1,
-                       r.goals2, BALL if r.penalty_win2() else '', m.team2.name))
+      lines.append('%s: %s%s %s%d - %d%s %s%s' %
+                       (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
+                        BALL if r.penalty_win1() else '', r.goals(0), r.goals(1),
+                        BALL if r.penalty_win2() else '', m.team(1).short_name(), m.team(1).flag()))
     bot.send_message(message.chat.id, '\n'.join(lines))
 
   # keep last
@@ -247,7 +240,7 @@ def main(config):
                             reply_markup=keyboard)
       return
 
-    match = db.matches.getMatch(m.group(1))
+    match = db.matches.getMatch(int(m.group(1)))
 
     if match is None:
       on_error(lineno())
@@ -266,15 +259,15 @@ def main(config):
               .row(make_button(1), make_button(2), make_button(3))\
               .row(make_button(4), make_button(5), make_button(6))\
               .row(make_button(7), make_button(8), make_button(9))
-      team = match.team1 if args_len == 1 else match.team2
-      bot.edit_message_text(SCORE_REQUEST % team.name,
+      team = match.team(0) if args_len == 1 else match.team(1)
+      bot.edit_message_text(SCORE_REQUEST % team.name(),
                             chat_id=message.message.chat.id,
                             message_id=message.message.message_id,
                             reply_markup=keyboard)
       return
 
     if args_len == 4:
-      if not match.is_playoff:
+      if not match.is_playoff():
         on_error(lineno())
         return
       if m.group(2) != m.group(3):
@@ -284,12 +277,12 @@ def main(config):
     else:
       result = Result(int(m.group(2)), int(m.group(3)))
 
-    if not result.winner and match.is_playoff:
+    if not result.winner and match.is_playoff():
       keyboard = telebot.types.InlineKeyboardMarkup(1)
       keyboard.add(telebot.types.InlineKeyboardButton(
-        match.team1.name, callback_data=data + "_1"))
+        match.team(0).name(), callback_data=data + "_1"))
       keyboard.add(telebot.types.InlineKeyboardButton(
-        match.team2.name, callback_data=data + "_2"))
+        match.team(1).name(), callback_data=data + "_2"))
       bot.edit_message_text(WINNER_REQUEST,
                             chat_id=message.message.chat.id,
                             message_id=message.message.message_id,
@@ -297,7 +290,7 @@ def main(config):
       return
 
     now = utcnow()
-    if match.time < now:
+    if match.start_time() < now:
       bot.edit_message_text(TOO_LATE_MSG,
                             chat_id=message.message.chat.id,
                             message_id=message.message.message_id)
@@ -305,11 +298,15 @@ def main(config):
 
     db.predictions.addPrediction(player, match, result, now)
 
-    t = match.time.astimezone(pytz.timezone('Europe/Moscow'))
+    start_time_str = match.start_time().astimezone(pytz.timezone('Europe/Moscow'))\
+                          .strftime(u'%d.%m в %H:%M'.encode('utf-8')).decode('utf-8')
+    bet_time_str = now.astimezone(pytz.timezone('Europe/Moscow'))\
+                      .strftime(u'%d.%m в %H:%M:%S'.encode('utf-8')).decode('utf-8')
     msg = CONFIRMATION_MSG % (
-         match.team1.name, BALL if result.penalty_win1() else '', result.goals1,
-         result.goals2, BALL if result.penalty_win2() else '', match.team2.name,
-         t.day, t.month, t.hour, t.minute, player.short_name())
+         match.team(0).flag(), match.team(0).name(), BALL if result.penalty_win1() else '', \
+         result.goals(0), result.goals(1), BALL if result.penalty_win2() else '',
+         match.team(1).name(), match.team(1).flag(), bet_time_str, start_time_str,
+         player.short_name())
     bot.edit_message_text(msg,
                           chat_id=message.message.chat.id,
                           message_id=message.message.message_id)
@@ -317,6 +314,12 @@ def main(config):
   bot.polling(none_stop=True)
 
 if __name__ == '__main__':
-  with open(sys.argv[1]) as config_file:
+  parser = argparse.ArgumentParser(
+      description='sum the integers at the command line')
+  parser.add_argument('config')
+  parser.add_argument('-d', '--dump', help='Print teams and matches and exit',
+                      action='store_true')
+  args = parser.parse_args(sys.argv[1:])
+  with open(args.config) as config_file:
     config = json.load(config_file)
-  sys.exit(main(config))
+  sys.exit(main(config, args.dump))

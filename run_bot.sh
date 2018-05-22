@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-if [ "$#" != "1" ]; then
-  echo "Usage:" $0 "config"
+if [ "$#" -lt "1" ]; then
+  echo "Usage:" $0 "config [bot args]"
   exit 1
 fi
 
@@ -13,5 +13,5 @@ function get_config_value {
 
 source "$(get_config_value "virtualenv_path")/bin/activate"
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-"$DIR/bot.py" "$config"
+until "$DIR/bot.py" "$@"; do sleep 5; done
 
