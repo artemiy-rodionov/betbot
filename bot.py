@@ -18,21 +18,22 @@ from datetime import datetime
 
 from database import Database, Result
 
-MATCHES_PER_PAGE = 7
+MATCHES_PER_PAGE = 8
+MSK_TZ = pytz.timezone('Europe/Moscow')
 
 BOT_USERNAME = '@delaytevashistavkibot'
-HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую. /mybets, чтобы посмотреть свои ставки'
+HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую. /mybets, чтобы посмотреть свои ставки.'
 START_MSG = u'Привет, %s! Поздравляю, ты в игре!\n'
 SEND_PRIVATE_MSG = u'Tcccc, не пали контору. Напиши мне личное сообщение (%s).' % BOT_USERNAME
 NAVIGATION_ERROR = u'Сорян, что-то пошло не так в строке %d. Попробуй еще раз.\n' + HELP_MSG
 NO_MATCHES_MSG = u'Уже не на что ставить =('
-SCORE_REQUEST = u'Сколько голов забьет %s?'
+SCORE_REQUEST = u'Сколько голов забьет %s%s?'
 WINNER_REQUEST = u'Кто победит по пенальти?'
 TOO_LATE_MSG = u'Уже поздно ставить на этот матч. Попробуй поставить на другой.\n' + HELP_MSG
-CONFIRMATION_MSG = u'Ставка %s%s %s%d - %d%s %s%s сделана %s. Начало матча %s по Москве. Удачи, %s!\n' + HELP_MSG
+CONFIRMATION_MSG = u'Ставка %s%s %s%d:%d%s %s%s сделана %s. Начало матча %s по Москве. Удачи, %s!\n' + HELP_MSG
 NO_BETS_MSG = u'Ты еще не сделал(а) ни одной ставки.\n' + HELP_MSG
 RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
-CHOOSE_MATCH_TITLE = u'Выбери матч (%d/%d)'
+CHOOSE_MATCH_TITLE = u'Выбери матч'
 LEFT_ARROW = u'\u2b05'
 RIGHT_ARROW = u'\u27a1'
 BALL = u'\u26bd'
@@ -41,6 +42,7 @@ ALREADY_REGISTERED=u'%s (%s) уже зарегистрирован(а).'
 REGISTER_SHOULD_BE_REPLY=u'Сообщение о регистрации должно быть ответом.'
 REGISTER_SHOULD_BE_REPLY_TO_FORWARD=u'Сообщение о регистрации должно быть ответом на форвард.'
 REGISTRATION_SUCCESS=u'%s aka %s (%s) успешно зарегистрирован.'
+ERROR_MESSAGE_ABSENT=u'Этот виджет сломан, вызови /bet снова.'
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
@@ -79,6 +81,7 @@ def main(config, just_dump):
     return
 
   telebot.logger.setLevel(logging.INFO)
+  logging.getLogger().setLevel(logging.INFO)
   # Threading disabled because it is unsupported by sqlite3
   bot = telebot.TeleBot(config['token'], threaded=False)
 
@@ -105,15 +108,14 @@ def main(config, just_dump):
     page = min(page, pages_number - 1)
     matches = matches[page * MATCHES_PER_PAGE:(page + 1) * MATCHES_PER_PAGE]
     keyboard = telebot.types.InlineKeyboardMarkup(1)
-    msk_tz = pytz.timezone('Europe/Moscow')
     predictions = {}
     for m, r in db.predictions.getForPlayer(player):
       predictions[m.id()] = r
     for m in matches:
-      start_time_str = m.start_time().astimezone(msk_tz).strftime('%d.%m %H:%M')
+      start_time_str = m.start_time().astimezone(MSK_TZ).strftime('%d.%m %H:%M')
       if m.id() in predictions:
         p = predictions[m.id()]
-        label = u'%s: %s%s %s%d - %d%s %s%s %s' % \
+        label = u'%s: %s%s %s%d:%d%s %s%s %s' % \
                     (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
                      BALL if p.penalty_win1() else '', p.goals(0), p.goals(1),
                      BALL if p.penalty_win2() else '', m.team(1).short_name(), m.team(1).flag(),
@@ -127,17 +129,22 @@ def main(config, just_dump):
                                                   callback_data='b_%s' % m.id())
       keyboard.add(button)
     navs = []
-    if page:
+    if pages_number > 1:
+      FILLER = '        ' # Telegram for Android bug workaround
       navs.append(
-          telebot.types.InlineKeyboardButton(LEFT_ARROW,
-                                             callback_data='l_%d' % (page - 1)))
-    if page != pages_number - 1:
+          telebot.types.InlineKeyboardButton(
+              FILLER + LEFT_ARROW + FILLER,
+              callback_data='l_%d' % ((page + pages_number - 1) % pages_number)))
       navs.append(
-          telebot.types.InlineKeyboardButton(RIGHT_ARROW,
-                                             callback_data='l_%d' % (page + 1)))
-    if len(navs):
+          telebot.types.InlineKeyboardButton(
+              FILLER + '%d/%d' % (page + 1, pages_number) + FILLER,
+              callback_data='l_%d' % page))
+      navs.append(
+          telebot.types.InlineKeyboardButton(
+              FILLER + RIGHT_ARROW + FILLER,
+              callback_data='l_%d' % ((page + 1)  % pages_number)))
       keyboard.row(*navs)
-    title = CHOOSE_MATCH_TITLE % (page + 1, pages_number)
+    title = CHOOSE_MATCH_TITLE
     return (title, keyboard)
 
   @bot.message_handler(func=lambda m: m.chat.type != 'private')
@@ -189,7 +196,7 @@ def main(config, just_dump):
 
     lines = []
     for m, r in predictions:
-      lines.append('%s: %s%s %s%d - %d%s %s%s' %
+      lines.append('%s: %s%s %s%d:%d%s %s%s' %
                        (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
                         BALL if r.penalty_win1() else '', r.goals(0), r.goals(1),
                         BALL if r.penalty_win2() else '', m.team(1).short_name(), m.team(1).flag()))
@@ -206,53 +213,48 @@ def main(config, just_dump):
   # b_<match_id>_<goals1>_<goals2>
   # b_<match_id>_<goals1>_<goals2>_<winner>
   @bot.callback_query_handler(lambda m: True)
-  def handle_navigation(message):
-    player = get_player(message.from_user)
-    data = message.data or ''
+  def handle_query(query):
+    if query.message is None:
+      bot.answer_callback_query(callback_query_id=query.id,
+                                text=ERROR_MESSAGE_ABSENT,
+                                show_alert=True)
+      return
+    bot.answer_callback_query(callback_query_id=query.id)
+    player = get_player(query.from_user)
+    data = query.data or ''
+
+    def edit_message(text, **kwargs):
+      bot.edit_message_text(text, chat_id=query.message.chat.id,
+                            message_id=query.message.message_id, **kwargs)
+
+    def on_error(line_no):
+      edit_message(NAVIGATION_ERROR % line_no)
 
     m = re.match(r'^b_([^_]*)$', data) or \
         re.match(r'^b_([^_]*)_([0-9])$', data) or \
         re.match(r'^b_([^_]*)_([0-9])_([0-9])$', data) or \
         re.match(r'^b_([^_]*)_([0-9])_([0-9])_([12])$', data)
 
-    def on_error(line_no):
-      bot.edit_message_text(NAVIGATION_ERROR % line_no,
-                            chat_id=message.message.chat.id,
-                            message_id=message.message.message_id)
-
     if m is None:
       m = re.match(r'^l_([0-9]+)$', data)
       if m is None:
-        on_error(lineno())
-        return
+        return on_error(lineno())
       page = int(m.group(1))
-
       page_to_send = create_matches_page(page, player)
-      if page is None:
-        bot.edit_message_text(NO_MATCHES_MSG,
-                              chat_id=message.message.chat.id,
-                              message_id=message.message.message_id)
-        return
+      if page_to_send is None:
+        return edit_message(NO_MATCHES_MSG)
       title, keyboard = page_to_send
-      bot.edit_message_text(title,
-                            chat_id=message.message.chat.id,
-                            message_id=message.message.message_id,
-                            reply_markup=keyboard)
-      return
+      return edit_message(title, reply_markup=keyboard)
 
     match = db.matches.getMatch(int(m.group(1)))
-
     if match is None:
-      on_error(lineno())
-      return
+      return on_error(lineno())
 
     args_len = len(m.groups())
-
     if args_len in [1, 2]:
       def make_button(score):
         cb_data = data + '_%d' % score
-        return telebot.types.InlineKeyboardButton(
-            str(score), callback_data=cb_data)
+        return telebot.types.InlineKeyboardButton(str(score), callback_data=cb_data)
 
       keyboard = telebot.types.InlineKeyboardMarkup(3)
       keyboard.row(make_button(0))\
@@ -260,19 +262,13 @@ def main(config, just_dump):
               .row(make_button(4), make_button(5), make_button(6))\
               .row(make_button(7), make_button(8), make_button(9))
       team = match.team(0) if args_len == 1 else match.team(1)
-      bot.edit_message_text(SCORE_REQUEST % team.name(),
-                            chat_id=message.message.chat.id,
-                            message_id=message.message.message_id,
-                            reply_markup=keyboard)
-      return
+      return edit_message(SCORE_REQUEST % (team.flag(), team.name()), reply_markup=keyboard)
 
     if args_len == 4:
       if not match.is_playoff():
-        on_error(lineno())
-        return
+        return on_error(lineno())
       if m.group(2) != m.group(3):
-        on_error(lineno())
-        return
+        return on_error(lineno())
       result = Result(int(m.group(2)), int(m.group(3)), int(m.group(4)))
     else:
       result = Result(int(m.group(2)), int(m.group(3)))
@@ -280,36 +276,29 @@ def main(config, just_dump):
     if not result.winner and match.is_playoff():
       keyboard = telebot.types.InlineKeyboardMarkup(1)
       keyboard.add(telebot.types.InlineKeyboardButton(
-        match.team(0).name(), callback_data=data + "_1"))
+        match.team(0).flag() + match.team(0).name(), callback_data=data + "_1"))
       keyboard.add(telebot.types.InlineKeyboardButton(
-        match.team(1).name(), callback_data=data + "_2"))
-      bot.edit_message_text(WINNER_REQUEST,
-                            chat_id=message.message.chat.id,
-                            message_id=message.message.message_id,
-                            reply_markup=keyboard)
-      return
+        match.team(1).flag() + match.team(1).name(), callback_data=data + "_2"))
+      return edit_message(WINNER_REQUEST, reply_markup=keyboard)
 
     now = utcnow()
+    logging.info('prediction player: %s match: %s result: %s time: %s' %
+                     (player.id(), match.id(), str(result), now))
+
     if match.start_time() < now:
-      bot.edit_message_text(TOO_LATE_MSG,
-                            chat_id=message.message.chat.id,
-                            message_id=message.message.message_id)
-      return
+      return edit_message(TOO_LATE_MSG)
 
     db.predictions.addPrediction(player, match, result, now)
-
-    start_time_str = match.start_time().astimezone(pytz.timezone('Europe/Moscow'))\
+    start_time_str = match.start_time().astimezone(MSK_TZ)\
                           .strftime(u'%d.%m в %H:%M'.encode('utf-8')).decode('utf-8')
-    bet_time_str = now.astimezone(pytz.timezone('Europe/Moscow'))\
+    bet_time_str = now.astimezone(MSK_TZ)\
                       .strftime(u'%d.%m в %H:%M:%S'.encode('utf-8')).decode('utf-8')
     msg = CONFIRMATION_MSG % (
          match.team(0).flag(), match.team(0).name(), BALL if result.penalty_win1() else '', \
          result.goals(0), result.goals(1), BALL if result.penalty_win2() else '',
          match.team(1).name(), match.team(1).flag(), bet_time_str, start_time_str,
          player.short_name())
-    bot.edit_message_text(msg,
-                          chat_id=message.message.chat.id,
-                          message_id=message.message.message_id)
+    return edit_message(msg)
 
   bot.polling(none_stop=True)
 

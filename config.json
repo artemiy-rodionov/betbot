@@ -1,5 +1,5 @@
 {
- "cache_dir": "/var/cache/betting",
+ "log_file": "/var/cache/betting/betting.log",
  "base_file": "/var/cache/betting/base.sqlite",
  "matches_data_file": "/var/cache/betting/matches_data.json",
  "virtualenv_path": "/var/cache/betting/virtualenv",

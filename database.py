@@ -241,12 +241,7 @@ class Result(object):
       self.winner = winner
 
   def goals(self, index):
-    if index == 0:
-      return self.goals1
-    elif index == 1:
-      return self.goals2
-    else:
-      raise RuntimeError('Wrong index %d' % index)
+    return (self.goals1, self.goals2)[index]
 
   def penalty_win1(self):
     return self.goals1 == self.goals2 and self.winner == 1
@@ -254,8 +249,11 @@ class Result(object):
   def penalty_win2(self):
     return self.goals1 == self.goals2 and self.winner == 2
 
+  def __str__(self):
+    return "%d - %d (%d)" % (self.goals1, self.goals2, self.winner)
+
 def adapt_result(result):
-  return "%d - %d (%d)" % (result.goals1, result.goals2, result.winner)
+  return str(result)
 
 def convert_result(s):
   m = re.match(r'^([0-9]) - ([0-9]) \(([012])\)$', s)
