@@ -13,6 +13,7 @@ function get_config_value {
 
 source "$(get_config_value "virtualenv_path")/bin/activate"
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+set -o pipefail
 until stdbuf -oL "$DIR/bot.py" "$@" 2>&1 | tee -a "$(get_config_value "log_file")"; do
   sleep 5
 done
