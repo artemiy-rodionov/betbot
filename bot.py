@@ -130,18 +130,17 @@ def main(config, just_dump):
       keyboard.add(button)
     navs = []
     if pages_number > 1:
-      FILLER = '        ' # Telegram for Android bug workaround
       navs.append(
           telebot.types.InlineKeyboardButton(
-              FILLER + LEFT_ARROW + FILLER,
+              LEFT_ARROW,
               callback_data='l_%d' % ((page + pages_number - 1) % pages_number)))
       navs.append(
           telebot.types.InlineKeyboardButton(
-              FILLER + '%d/%d' % (page + 1, pages_number) + FILLER,
+              '%d/%d' % (page + 1, pages_number),
               callback_data='l_%d' % page))
       navs.append(
           telebot.types.InlineKeyboardButton(
-              FILLER + RIGHT_ARROW + FILLER,
+              RIGHT_ARROW,
               callback_data='l_%d' % ((page + 1)  % pages_number)))
       keyboard.row(*navs)
     title = CHOOSE_MATCH_TITLE
