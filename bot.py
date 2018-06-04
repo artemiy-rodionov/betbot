@@ -302,8 +302,7 @@ def main(config, just_dump):
   bot.polling(none_stop=True)
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(
-      description='sum the integers at the command line')
+  parser = argparse.ArgumentParser()
   parser.add_argument('config')
   parser.add_argument('-d', '--dump', help='Print teams and matches and exit',
                       action='store_true')

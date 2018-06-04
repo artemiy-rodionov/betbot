@@ -15,6 +15,9 @@ def iter_matches(matches_info):
       for match in subgroup['matches']:
         yield subgroup['name'], match
 
+def sorted_matches(matches_info):
+  return sorted(iter_matches(matches_info), key=lambda m: m[1]['name'])
+
 class Database(object):
   def __init__(self, config):
     self.conn = sqlite3.connect(config['base_file'],
@@ -65,29 +68,45 @@ class Team(object):
                .encode('utf-8')
 
 class Teams(object):
+  @staticmethod
+  def get_team_id(match_type, team_label):
+    if match_type == 'group':
+      return team_label
+    return '%s_%s' % (match_type, team_label)
+
   def __init__(self, matches_data):
     self.teams = dict()
     for team_info in matches_data['teams']:
       team = Team.make_real(team_info)
       self.teams[team.id()] = team
 
-    for _, match_info in iter_matches(matches_data):
-      for team_type in ['home_team', 'away_team']:
-        match_type = match_info['type']
-        team_label = match_info[team_type]
-        id = self.get_team_id(match_type, team_label)
-        if id in self.teams:
-          continue
-        team = Team.make_fake(id, match_type, team_label)
-        self.teams[team.id()] = team
+    for group, group_info in matches_data['groups'].iteritems():
+      w, r = group_info['winner'], group_info['runnerup']
+      if w is not None:
+        assert(w in self.teams)
+        self.teams[Teams.get_team_id('qualified', 'winner_%s' % group)] = self.teams[w]
+      if r is not None:
+        assert(r in self.teams)
+        self.teams[Teams.get_team_id('qualified', 'runner_%s' % group)] = self.teams[r]
 
-  def get_team_id(self, match_type, team_label):
-    if team_label in self.teams:
-      return team_label
-    return '%s_%s' % (match_type, team_label)
+    for _, match_info in sorted_matches(matches_data):
+      match_type = match_info['type']
+      match_teams = {}
+      for team_type in ['home', 'away']:
+        team_label = match_info['%s_team' % team_type]
+        id = Teams.get_team_id(match_type, team_label)
+        if id not in self.teams:
+          self.teams[id] = Team.make_fake(id, match_type, team_label)
+        match_teams[team_type] = self.teams[id]
+      if match_info['finished'] and match_type != 'group':
+        assert(match_info['winner'] in {'home', 'away'})
+        w = match_teams[match_info['winner']]
+        l = match_teams['home' if match_info['winner'] == 'away' else 'away']
+        self.teams[Teams.get_team_id('winner', match_info['name'])] = w
+        self.teams[Teams.get_team_id('loser', match_info['name'])] = l
 
   def get_participants(self, match_info):
-    return [self.teams[self.get_team_id(match_info['type'], match_info[t])]
+    return [self.teams[Teams.get_team_id(match_info['type'], match_info[t])]
                 for t in ['home_team', 'away_team']]
 
   def __str__(self):
@@ -95,6 +114,39 @@ class Teams(object):
 
   def get_team(self, team_id):
     return self.teams[team_id]
+
+class Result(object):
+  def __init__(self, goals1, goals2, winner=None):
+    self.goals1 = goals1
+    self.goals2 = goals2
+    if winner is None:
+      self.winner = 0 if goals1 == goals2 else (1 if goals1 > goals2 else 2)
+    else:
+      self.winner = winner
+
+  def goals(self, index):
+    return (self.goals1, self.goals2)[index]
+
+  def penalty_win1(self):
+    return self.goals1 == self.goals2 and self.winner == 1
+
+  def penalty_win2(self):
+    return self.goals1 == self.goals2 and self.winner == 2
+
+  def __str__(self):
+    return "%d - %d (%d)" % (self.goals1, self.goals2, self.winner)
+
+def adapt_result(result):
+  return str(result)
+
+def convert_result(s):
+  m = re.match(r'^([0-9]) - ([0-9]) \(([012])\)$', s)
+  if m is None:
+    return None
+  return Result(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+sqlite3.register_adapter(Result, adapt_result)
+sqlite3.register_converter('result', convert_result)
 
 class Match(object):
   SHORT_ROUNDS = {
@@ -113,14 +165,24 @@ class Match(object):
     'Final': 'Final'
   }
 
+  @staticmethod
+  def parse_result(match_info):
+    h, a = match_info['home_result'], match_info['away_result']
+    if h is None or a is None:
+      return None
+    if 'winner' not in match_info or match_info['winner'] is None:
+      return Result(h, a)
+    return Result(h, a, {'home': 1, 'away': 2}[match_info['winner']])
+
   def __init__(self, round, match_info, teams):
-    self._round = round
     self._id = match_info['name']
+    self._round = round
     self._teams = teams.get_participants(match_info)
     self._start_time = dateutil.parser.parse(match_info['date']).astimezone(pytz.utc)
     self._is_playoff = 'home_penalty' in match_info
-    self._result = None
     self._is_finished = match_info['finished']
+    self._result = Match.parse_result(match_info)
+    assert(not self._is_finished or self._result is not None)
 
   def id(self):
     return self._id
@@ -230,39 +292,6 @@ class Players(object):
 
   def isAdmin(self, id):
     return id == self.admin_id
-
-class Result(object):
-  def __init__(self, goals1, goals2, winner=None):
-    self.goals1 = goals1
-    self.goals2 = goals2
-    if winner is None:
-      self.winner = 0 if goals1 == goals2 else (1 if goals1 > goals2 else 2)
-    else:
-      self.winner = winner
-
-  def goals(self, index):
-    return (self.goals1, self.goals2)[index]
-
-  def penalty_win1(self):
-    return self.goals1 == self.goals2 and self.winner == 1
-
-  def penalty_win2(self):
-    return self.goals1 == self.goals2 and self.winner == 2
-
-  def __str__(self):
-    return "%d - %d (%d)" % (self.goals1, self.goals2, self.winner)
-
-def adapt_result(result):
-  return str(result)
-
-def convert_result(s):
-  m = re.match(r'^([0-9]) - ([0-9]) \(([012])\)$', s)
-  if m is None:
-    return None
-  return Result(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-
-sqlite3.register_adapter(Result, adapt_result)
-sqlite3.register_converter('result', convert_result)
 
 class Predictions(object):
   def __init__(self, conn, players, matches):
