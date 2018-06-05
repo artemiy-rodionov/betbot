@@ -5,7 +5,7 @@ Created on Sat Jun 04 12:05:50 2016
 
 @author: SSundukov
 """
-
+import argparse
 import inspect
 import json
 import logging
@@ -13,8 +13,8 @@ import pytz
 import re
 import sys
 import telebot
-import argparse
 from datetime import datetime
+import threading
 
 from database import Database, Result
 
@@ -63,7 +63,7 @@ def post_results(config, match_id, post_now=False):
       delay = (match.time - now).total_seconds()
     print 'Going to sleep for %s seconds.' % delay
     sleep(delay)
-  bot = telebot.TeleBot(config['token'], threaded=False)
+  bot = telebot.TeleBot(config['token'])
   lines = []
   for p, r in db.predictions.getForMatch(match):
     lines.append('_%s_ %s%d - %d%s' % (p.name(), BALL if r.penalty_win1() else '',
@@ -73,33 +73,63 @@ def post_results(config, match_id, post_now=False):
   msg = RESULTS_TITLE % (match.team1.name, match.team2.name) + '\n'.join(lines)
   bot.send_message(config['group_id'], msg, parse_mode='Markdown')
 
-def main(config, just_dump):
-  db = Database(config)
-  if just_dump:
-    print(str(db.teams))
-    print(str(db.matches))
-    return
+def create_bot(config):
+  return telebot.TeleBot(config['token'], threaded=False)
 
-  telebot.logger.setLevel(logging.INFO)
-  logging.getLogger().setLevel(logging.INFO)
-  # Threading disabled because it is unsupported by sqlite3
-  bot = telebot.TeleBot(config['token'], threaded=False)
+class BotRunner(threading.Thread):
+  class BotStopper(threading.Thread):
+    def __init__(self, runner, stopped_event):
+      super(BotRunner.BotStopper, self).__init__(name='bot_stopper')
+      self.runner = runner
+      self.stopped_event = stopped_event
 
-  def register_player(player):
-    assert(not is_registered(player))
-    return db.players.createPlayer(player.id, player.first_name, player.last_name)
+    def run(self):
+      self.stopped_event.wait()
+      self.runner.stop_bot()
+      self.runner.join()
 
-  def get_player(player):
-    assert(is_registered(player))
-    return db.players.getPlayer(player.id)
+  def __init__(self, config, stopped_event, exception_event):
+    super(BotRunner, self).__init__(name='bot_runner')
+    self.stopped_event = stopped_event
+    self.exception_event = exception_event
+    self.bot = create_bot(config)
+    self.db_lock = threading.Lock()
+    self.db = Database(config)
 
-  def is_registered(user):
-    return db.players.isRegistered(user.id)
+  def get_db(self):
+    with self.db_lock:
+      return self.db
 
-  def is_admin(user):
-    return db.players.isAdmin(user.id)
+  def replace_db(self, new_db):
+    with self.db_lock:
+      self.db = new_db
 
-  def create_matches_page(page, player):
+  def run(self):
+    BotRunner.BotStopper(self, self.stopped_event).start()
+    try:
+      self.run_bot()
+    except:
+      self.exception_event.set()
+      raise
+    finally:
+      self.stopped_event.set()
+
+  def register_player(self, player):
+    assert(not self.is_registered(player))
+    return self.get_db().players.createPlayer(player.id, player.first_name, player.last_name)
+
+  def get_player(self, player):
+    assert(self.is_registered(player))
+    return self.get_db().players.getPlayer(player.id)
+
+  def is_registered(self, user):
+    return self.get_db().players.isRegistered(user.id)
+
+  def is_admin(self, user):
+    return self.get_db().players.isAdmin(user.id)
+
+  def create_matches_page(self, page, player):
+    db = self.get_db()
     matches = db.matches.getMatchesAfter(utcnow())
     matches_number = len(matches)
     if matches_number == 0:
@@ -146,160 +176,189 @@ def main(config, just_dump):
     title = CHOOSE_MATCH_TITLE
     return (title, keyboard)
 
-  @bot.message_handler(func=lambda m: m.chat.type != 'private')
-  def on_not_private(message):
-    bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
-                     reply_to_message_id=message.message_id)
+  def run_bot(self):
+    bot = self.bot
+    @bot.message_handler(func=lambda m: m.chat.type != 'private')
+    def on_not_private(message):
+      bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
+                       reply_to_message_id=message.message_id)
 
-  @bot.message_handler(commands=['register'], func=lambda m: is_admin(m.from_user))
-  def register(message):
-    if message.reply_to_message is None:
-      bot.send_message(message.chat.id, REGISTER_SHOULD_BE_REPLY)
-      return
-    if message.reply_to_message.forward_from is None:
-      bot.send_message(message.chat.id, REGISTER_SHOULD_BE_REPLY_TO_FORWARD)
-      return
-    forward_from = message.reply_to_message.forward_from
-    if is_registered(forward_from):
-      player = get_player(forward_from)
-      bot.send_message(message.chat.id, ALREADY_REGISTERED % (player.name(), player.id()))
-      return
-    player = register_player(message.reply_to_message.forward_from)
-    bot.send_message(message.chat.id, REGISTRATION_SUCCESS % (player.name(), player.short_name(),
-                                                              player.id()))
-    bot.send_message(player.id(), START_MSG % player.short_name() + HELP_MSG)
+    @bot.message_handler(commands=['register'], func=lambda m: self.is_admin(m.from_user))
+    def register(message):
+      if message.reply_to_message is None:
+        bot.send_message(message.chat.id, REGISTER_SHOULD_BE_REPLY)
+        return
+      if message.reply_to_message.forward_from is None:
+        bot.send_message(message.chat.id, REGISTER_SHOULD_BE_REPLY_TO_FORWARD)
+        return
+      forward_from = message.reply_to_message.forward_from
+      if self.is_registered(forward_from):
+        player = self.get_player(forward_from)
+        bot.send_message(message.chat.id, ALREADY_REGISTERED % (player.name(), player.id()))
+        return
+      player = self.register_player(message.reply_to_message.forward_from)
+      bot.send_message(message.chat.id, REGISTRATION_SUCCESS % (player.name(), player.short_name(),
+                                                                player.id()))
+      bot.send_message(player.id(), START_MSG % player.short_name() + HELP_MSG)
 
-  @bot.message_handler(func=lambda m: not is_registered(m.from_user))
-  def on_not_registered(message):
-    bot.send_message(message.chat.id, NOT_REGISTERED)
+    @bot.message_handler(func=lambda m: not self.is_registered(m.from_user))
+    def on_not_registered(message):
+      bot.send_message(message.chat.id, NOT_REGISTERED)
 
-  @bot.message_handler(commands=['bet'])
-  def start_betting(message):
-    player = get_player(message.from_user)
-    page_to_send = create_matches_page(0, player)
-    if page_to_send is None:
-      bot.send_message(message.chat.id, NO_MATCHES_MSG)
-      return
-    title, keyboard = page_to_send
-    bot.send_message(message.chat.id, title,
-                     reply_markup=keyboard)
-
-  @bot.message_handler(commands=['mybets'])
-  def list_my_bets(message):
-    player = get_player(message.from_user)
-    predictions = db.predictions.getForPlayer(player)
-
-    if len(predictions) == 0:
-      bot.send_message(message.chat.id, NO_BETS_MSG)
-      return
-
-    lines = []
-    for m, r in predictions:
-      lines.append('%s: %s%s %s%d:%d%s %s%s' %
-                       (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
-                        BALL if r.penalty_win1() else '', r.goals(0), r.goals(1),
-                        BALL if r.penalty_win2() else '', m.team(1).short_name(), m.team(1).flag()))
-    bot.send_message(message.chat.id, '\n'.join(lines))
-
-  # keep last
-  @bot.message_handler(func=lambda m: True)
-  def help(message):
-    bot.send_message(message.chat.id, HELP_MSG)
-
-  # l_<page>
-  # b_<match_id>
-  # b_<match_id>_<goals1>
-  # b_<match_id>_<goals1>_<goals2>
-  # b_<match_id>_<goals1>_<goals2>_<winner>
-  @bot.callback_query_handler(lambda m: True)
-  def handle_query(query):
-    if query.message is None:
-      bot.answer_callback_query(callback_query_id=query.id,
-                                text=ERROR_MESSAGE_ABSENT,
-                                show_alert=True)
-      return
-    bot.answer_callback_query(callback_query_id=query.id)
-    player = get_player(query.from_user)
-    data = query.data or ''
-
-    def edit_message(text, **kwargs):
-      bot.edit_message_text(text, chat_id=query.message.chat.id,
-                            message_id=query.message.message_id, **kwargs)
-
-    def on_error(line_no):
-      edit_message(NAVIGATION_ERROR % line_no)
-
-    m = re.match(r'^b_([^_]*)$', data) or \
-        re.match(r'^b_([^_]*)_([0-9])$', data) or \
-        re.match(r'^b_([^_]*)_([0-9])_([0-9])$', data) or \
-        re.match(r'^b_([^_]*)_([0-9])_([0-9])_([12])$', data)
-
-    if m is None:
-      m = re.match(r'^l_([0-9]+)$', data)
-      if m is None:
-        return on_error(lineno())
-      page = int(m.group(1))
-      page_to_send = create_matches_page(page, player)
+    @bot.message_handler(commands=['bet'])
+    def start_betting(message):
+      player = self.get_player(message.from_user)
+      page_to_send = self.create_matches_page(0, player)
       if page_to_send is None:
-        return edit_message(NO_MATCHES_MSG)
+        bot.send_message(message.chat.id, NO_MATCHES_MSG)
+        return
       title, keyboard = page_to_send
-      return edit_message(title, reply_markup=keyboard)
+      bot.send_message(message.chat.id, title,
+                       reply_markup=keyboard)
 
-    match = db.matches.getMatch(int(m.group(1)))
-    if match is None:
-      return on_error(lineno())
+    @bot.message_handler(commands=['mybets'])
+    def list_my_bets(message):
+      player = self.get_player(message.from_user)
+      predictions = self.get_db().predictions.getForPlayer(player)
 
-    args_len = len(m.groups())
-    if args_len in [1, 2]:
-      def make_button(score):
-        cb_data = data + '_%d' % score
-        return telebot.types.InlineKeyboardButton(str(score), callback_data=cb_data)
+      if len(predictions) == 0:
+        bot.send_message(message.chat.id, NO_BETS_MSG)
+        return
 
-      keyboard = telebot.types.InlineKeyboardMarkup(3)
-      keyboard.row(make_button(0))\
-              .row(make_button(1), make_button(2), make_button(3))\
-              .row(make_button(4), make_button(5), make_button(6))\
-              .row(make_button(7), make_button(8), make_button(9))
-      team = match.team(0) if args_len == 1 else match.team(1)
-      return edit_message(SCORE_REQUEST % (team.flag(), team.name()), reply_markup=keyboard)
+      lines = []
+      for m, r in predictions:
+        lines.append('%s: %s%s %s%d:%d%s %s%s' %
+                         (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
+                          BALL if r.penalty_win1() else '', r.goals(0), r.goals(1),
+                          BALL if r.penalty_win2() else '', m.team(1).short_name(),
+                          m.team(1).flag()))
+      bot.send_message(message.chat.id, '\n'.join(lines))
 
-    if args_len == 4:
-      if not match.is_playoff():
+    # keep last
+    @bot.message_handler(func=lambda m: True)
+    def help(message):
+      bot.send_message(message.chat.id, HELP_MSG)
+
+    # l_<page>
+    # b_<match_id>
+    # b_<match_id>_<goals1>
+    # b_<match_id>_<goals1>_<goals2>
+    # b_<match_id>_<goals1>_<goals2>_<winner>
+    @bot.callback_query_handler(lambda m: True)
+    def handle_query(query):
+      db = self.get_db()
+      if query.message is None:
+        bot.answer_callback_query(callback_query_id=query.id,
+                                  text=ERROR_MESSAGE_ABSENT,
+                                  show_alert=True)
+        return
+      bot.answer_callback_query(callback_query_id=query.id)
+      player = self.get_player(query.from_user)
+      data = query.data or ''
+
+      def edit_message(text, **kwargs):
+        bot.edit_message_text(text, chat_id=query.message.chat.id,
+                              message_id=query.message.message_id, **kwargs)
+
+      def on_error(line_no):
+        edit_message(NAVIGATION_ERROR % line_no)
+
+      m = re.match(r'^b_([^_]*)$', data) or \
+          re.match(r'^b_([^_]*)_([0-9])$', data) or \
+          re.match(r'^b_([^_]*)_([0-9])_([0-9])$', data) or \
+          re.match(r'^b_([^_]*)_([0-9])_([0-9])_([12])$', data)
+
+      if m is None:
+        m = re.match(r'^l_([0-9]+)$', data)
+        if m is None:
+          return on_error(lineno())
+        page = int(m.group(1))
+        page_to_send = self.create_matches_page(page, player)
+        if page_to_send is None:
+          return edit_message(NO_MATCHES_MSG)
+        title, keyboard = page_to_send
+        return edit_message(title, reply_markup=keyboard)
+
+      match = db.matches.getMatch(int(m.group(1)))
+      if match is None:
         return on_error(lineno())
-      if m.group(2) != m.group(3):
-        return on_error(lineno())
-      result = Result(int(m.group(2)), int(m.group(3)), int(m.group(4)))
-    else:
-      result = Result(int(m.group(2)), int(m.group(3)))
 
-    if not result.winner and match.is_playoff():
-      keyboard = telebot.types.InlineKeyboardMarkup(1)
-      keyboard.add(telebot.types.InlineKeyboardButton(
-        match.team(0).flag() + match.team(0).name(), callback_data=data + "_1"))
-      keyboard.add(telebot.types.InlineKeyboardButton(
-        match.team(1).flag() + match.team(1).name(), callback_data=data + "_2"))
-      return edit_message(WINNER_REQUEST, reply_markup=keyboard)
+      args_len = len(m.groups())
+      if args_len in [1, 2]:
+        def make_button(score):
+          cb_data = data + '_%d' % score
+          return telebot.types.InlineKeyboardButton(str(score), callback_data=cb_data)
 
-    now = utcnow()
-    logging.info('prediction player: %s match: %s result: %s time: %s' %
-                     (player.id(), match.id(), str(result), now))
+        keyboard = telebot.types.InlineKeyboardMarkup(3)
+        keyboard.row(make_button(0))\
+                .row(make_button(1), make_button(2), make_button(3))\
+                .row(make_button(4), make_button(5), make_button(6))\
+                .row(make_button(7), make_button(8), make_button(9))
+        team = match.team(0) if args_len == 1 else match.team(1)
+        return edit_message(SCORE_REQUEST % (team.flag(), team.name()), reply_markup=keyboard)
 
-    if match.start_time() < now:
-      return edit_message(TOO_LATE_MSG)
+      if args_len == 4:
+        if not match.is_playoff():
+          return on_error(lineno())
+        if m.group(2) != m.group(3):
+          return on_error(lineno())
+        result = Result(int(m.group(2)), int(m.group(3)), int(m.group(4)))
+      else:
+        result = Result(int(m.group(2)), int(m.group(3)))
 
-    db.predictions.addPrediction(player, match, result, now)
-    start_time_str = match.start_time().astimezone(MSK_TZ)\
-                          .strftime(u'%d.%m в %H:%M'.encode('utf-8')).decode('utf-8')
-    bet_time_str = now.astimezone(MSK_TZ)\
-                      .strftime(u'%d.%m в %H:%M:%S'.encode('utf-8')).decode('utf-8')
-    msg = CONFIRMATION_MSG % (
-         match.team(0).flag(), match.team(0).name(), BALL if result.penalty_win1() else '', \
-         result.goals(0), result.goals(1), BALL if result.penalty_win2() else '',
-         match.team(1).name(), match.team(1).flag(), bet_time_str, start_time_str,
-         player.short_name())
-    return edit_message(msg)
+      if not result.winner and match.is_playoff():
+        keyboard = telebot.types.InlineKeyboardMarkup(1)
+        keyboard.add(telebot.types.InlineKeyboardButton(
+          match.team(0).flag() + match.team(0).name(), callback_data=data + "_1"))
+        keyboard.add(telebot.types.InlineKeyboardButton(
+          match.team(1).flag() + match.team(1).name(), callback_data=data + "_2"))
+        return edit_message(WINNER_REQUEST, reply_markup=keyboard)
 
-  bot.polling(none_stop=True)
+      now = utcnow()
+      logging.info('prediction player: %s match: %s result: %s time: %s' %
+                       (player.id(), match.id(), str(result), now))
+
+      if match.start_time() < now:
+        return edit_message(TOO_LATE_MSG)
+
+      db.predictions.addPrediction(player, match, result, now)
+      start_time_str = match.start_time().astimezone(MSK_TZ)\
+                            .strftime(u'%d.%m в %H:%M'.encode('utf-8')).decode('utf-8')
+      bet_time_str = now.astimezone(MSK_TZ)\
+                        .strftime(u'%d.%m в %H:%M:%S'.encode('utf-8')).decode('utf-8')
+      msg = CONFIRMATION_MSG % (
+           match.team(0).flag(), match.team(0).name(), BALL if result.penalty_win1() else '', \
+           result.goals(0), result.goals(1), BALL if result.penalty_win2() else '',
+           match.team(1).name(), match.team(1).flag(), bet_time_str, start_time_str,
+           player.short_name())
+      return edit_message(msg)
+
+    bot.polling(none_stop=True, timeout=1)
+
+  def stop_bot(self):
+    self.bot.stop_polling()
+
+def main(config, just_dump):
+  if just_dump:
+    db = Database(config)
+    print(str(db.teams))
+    print(str(db.matches))
+    return
+  telebot.logger.setLevel(logging.INFO)
+  logging.getLogger().setLevel(logging.INFO)
+  stopped_event = threading.Event()
+  exception_event = threading.Event()
+  BotRunner(config, stopped_event, exception_event).start()
+  try:
+    while True:
+      threads = [t for t in threading.enumerate() if t != threading.current_thread()]
+      if len(threads) == 0:
+        break
+      threads[0].join(1)
+  finally:
+    stopped_event.set()
+  if exception_event.is_set():
+    return 1
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
