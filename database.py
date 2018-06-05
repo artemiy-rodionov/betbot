@@ -7,6 +7,8 @@ import sqlite3
 
 import dateutil.parser
 
+from sqlite_context import dbopen
+
 BLANK_FLAG=u'\U0001F3F3\uFE0F'
 
 def iter_matches(matches_info):
@@ -20,14 +22,11 @@ def sorted_matches(matches_info):
 
 class Database(object):
   def __init__(self, config):
-    self.conn = sqlite3.connect(config['base_file'],
-                                detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     with open(config['matches_data_file']) as f:
       matches_data = json.load(f)
-    self.teams = Teams(matches_data)
-    self.matches = Matches(matches_data, self.teams)
-    self.players = Players(self.conn, config['admin_id'])
-    self.predictions = Predictions(self.conn, self.players, self.matches)
+    self.matches = Matches(matches_data, Teams(matches_data))
+    self.players = Players(config['base_file'], config['admin_id'])
+    self.predictions = Predictions(config['base_file'], self.players, self.matches)
 
 class Team(object):
   @staticmethod
@@ -266,25 +265,25 @@ class Player(object):
     return '%s (%d)' % (self.name(), self.id())
 
 class Players(object):
-  def __init__(self, conn, admin_id):
-    self.conn = conn
+  def __init__(self, db_path, admin_id):
+    self.db_path = db_path
     self.admin_id = admin_id
-    self.conn.execute('''CREATE TABLE IF NOT EXISTS players
-                         (id integer, first_name text, last_name text, display_name text)''')
-    self.conn.commit()
+    with self.db() as db:
+      db.execute('''CREATE TABLE IF NOT EXISTS players
+                    (id integer, first_name text, last_name text, display_name text)''')
 
   def getPlayer(self, id):
-    res = self.conn.execute('''SELECT first_name, last_name, display_name
-                               FROM players WHERE id=?''', (id,)).fetchone()
+    with self.db() as db:
+      res = db.execute('''SELECT first_name, last_name, display_name
+                          FROM players WHERE id=?''', (id,)).fetchone()
     if res is None:
       return None
     return Player(id, res[0], res[1], res[2])
 
   def createPlayer(self, id, first_name, last_name):
-    self.conn.execute('''INSERT INTO players (id, first_name, last_name, display_name)
-                         VALUES (?,?,?,?)''',
-                      (id, first_name, last_name, None))
-    self.conn.commit()
+    with self.db() as db:
+      db.execute('''INSERT INTO players (id, first_name, last_name, display_name)
+                    VALUES (?,?,?,?)''', (id, first_name, last_name, None))
     return self.getPlayer(id)
 
   def isRegistered(self, id):
@@ -293,52 +292,54 @@ class Players(object):
   def isAdmin(self, id):
     return id == self.admin_id
 
+  def db(self):
+   return dbopen(self.db_path)
+
 class Predictions(object):
-  def __init__(self, conn, players, matches):
-    self.conn = conn
+  def __init__(self, db_path, players, matches):
+    self.db_path = db_path
     self.players = players
     self.matches = matches
-    self.conn.execute('''CREATE TABLE IF NOT EXISTS predictions
-                         (player_id integer,
-                          match_id integer,
-                          result result,
-                          time timestamp)''')
-    self.conn.commit()
+    with self.db() as db:
+      db.execute('''CREATE TABLE IF NOT EXISTS predictions
+                    (player_id integer, match_id integer, result result, time timestamp)''')
 
   def addPrediction(self, player, match, result, time):
-    res = self.conn.execute('''SELECT result, time FROM predictions
-                               WHERE player_id=? and match_id=?''',
-                            (player.id(), match.id()))
-    rows = [r for r in res]
-    if len(rows) == 0:
-      self.conn.execute('''INSERT INTO predictions
-                           (player_id, match_id, result, time)
-                           values(?, ?, ?, ?)''',
-                        (player.id(), match.id(), result, time))
-    else:
-      self.conn.execute('''UPDATE predictions SET result=?, time=?
-                           WHERE player_id=? AND match_id=?''',
-                        (result, time, player.id(), match.id()))
-    self.conn.commit()
+    with self.db() as db:
+			res = db.execute('''SELECT result, time FROM predictions
+							  					 WHERE player_id=? and match_id=?''', (player.id(), match.id()))
+			rows = [r for r in res]
+			if len(rows) == 0:
+				db.execute('''INSERT INTO predictions
+											(player_id, match_id, result, time)
+											values(?, ?, ?, ?)''', (player.id(), match.id(), result, time))
+			else:
+				db.execute('''UPDATE predictions SET result=?, time=?
+				   					  WHERE player_id=? AND match_id=?''', (result, time, player.id(), match.id()))
 
   def getForPlayer(self, player):
     predictions = []
-    for row in self.conn.execute('''SELECT result, match_id FROM predictions
-                                    WHERE player_id=?''', (player.id(),)):
-      res = row[0]
-      match = self.matches.getMatch(row[1])
-      predictions.append((match, res))
+    with self.db() as db:
+      for row in db.execute('''SELECT result, match_id FROM predictions
+                               WHERE player_id=?''', (player.id(),)):
+        res = row[0]
+        match = self.matches.getMatch(row[1])
+        predictions.append((match, res))
     predictions.sort(key=lambda p: p[0].start_time())
     return predictions
 
   def getForMatch(self, match):
     predictions = []
-    for row in self.conn.execute('''SELECT player_id, result FROM predictions
-                                    WHERE match_id=?''', (match.id,)):
-      res = row[1]
-      player = self.players.getOrCreatePlayer(row[0])
-      predictions.append((player, res))
+    with self.db() as db:
+      for row in db.execute('''SELECT player_id, result FROM predictions
+                               WHERE match_id=?''', (match.id,)):
+        res = row[1]
+        player = self.players.getOrCreatePlayer(row[0])
+        predictions.append((player, res))
     predictions.sort(key=lambda p: p[0].name)
     return predictions
+
+  def db(self):
+   return dbopen(self.db_path)
 
 
