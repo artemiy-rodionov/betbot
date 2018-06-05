@@ -24,7 +24,8 @@ class Database(object):
   def __init__(self, config):
     with open(config['matches_data_file']) as f:
       matches_data = json.load(f)
-    self.matches = Matches(matches_data, Teams(matches_data))
+    self.teams = Teams(matches_data)
+    self.matches = Matches(matches_data, self.teams)
     self.players = Players(config['base_file'], config['admin_id'])
     self.predictions = Predictions(config['base_file'], self.players, self.matches)
 
