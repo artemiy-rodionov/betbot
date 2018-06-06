@@ -9,17 +9,22 @@ import argparse
 import inspect
 import json
 import logging
+import os
 import pytz
 import re
 import sys
 import telebot
-from datetime import datetime
+import tempfile
 import threading
+import time
+import traceback
+from datetime import datetime, timedelta
 
 from database import Database, Result
 
 MATCHES_PER_PAGE = 8
 MSK_TZ = pytz.timezone('Europe/Moscow')
+UPDATE_INTERVAL = timedelta(seconds=60)
 
 BOT_USERNAME = '@delaytevashistavkibot'
 HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую. /mybets, чтобы посмотреть свои ставки.'
@@ -75,6 +80,32 @@ def post_results(config, match_id, post_now=False):
 
 def create_bot(config):
   return telebot.TeleBot(config['token'], threaded=False)
+
+def update_job(config, bot_runner, stopped_event):
+  last_update = utcnow() - UPDATE_INTERVAL
+  logging.info('starting update loop')
+  while not stopped_event.is_set():
+    time.sleep(1)
+    if utcnow() - last_update <= UPDATE_INTERVAL:
+      continue
+    try:
+      db = Database(config)
+      bot_runner.replace_db(Database(config))
+      results = db.predictions.genResults()
+      tmp_file = None
+      try:
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+          tmp_file = f.name
+          json.dump(results, f)
+        os.chmod(tmp_file, 0644)
+        os.rename(tmp_file, config['results_file'])
+      finally:
+        if tmp_file is not None and os.path.exists(tmp_file):
+          os.unlink(tmp_file)
+      last_update = utcnow()
+      logging.info('update finished')
+    except:
+      logging.error(traceback.format_exc())
 
 class BotRunner(threading.Thread):
   class BotStopper(threading.Thread):
@@ -345,10 +376,14 @@ def main(config, just_dump):
     print(str(db.matches))
     return
   telebot.logger.setLevel(logging.INFO)
+  logging.basicConfig(format=
+    '%(asctime)s (%(filename)s:%(lineno)d %(threadName)s) %(levelname)s: "%(message)s"')
   logging.getLogger().setLevel(logging.INFO)
   stopped_event = threading.Event()
   exception_event = threading.Event()
-  BotRunner(config, stopped_event, exception_event).start()
+  runner = BotRunner(config, stopped_event, exception_event)
+  runner.start()
+  threading.Thread(target=update_job, name='update', args=(config, runner, stopped_event)).start()
   try:
     while True:
       threads = [t for t in threading.enumerate() if t != threading.current_thread()]

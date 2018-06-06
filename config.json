@@ -1,9 +1,9 @@
 {
  "log_file": "/var/cache/betting/betting.log",
  "base_file": "/var/cache/betting/base.sqlite",
- "matches_data_file": "/var/cache/betting/matches_data.json",
  "virtualenv_path": "/var/cache/betting/virtualenv",
- "token": <REMOVED>,
- "admin_id": <REMOVED>,
- "matches_data_source": "https://raw.githubusercontent.com/lsv/fifa-worldcup-2018/master/data.json"
+ "results_file": "/var/cache/betting/www/results.json",
+ "matches_data_source": "https://raw.githubusercontent.com/lsv/fifa-worldcup-2018/master/data.json",
+ "token": "<BOT TOKEN>",
+ "admin_id": <ADMIN TELEGRAM ID>
 }

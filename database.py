@@ -4,6 +4,7 @@ import json
 import pytz
 import re
 import sqlite3
+import urllib
 
 import dateutil.parser
 
@@ -22,8 +23,7 @@ def sorted_matches(matches_info):
 
 class Database(object):
   def __init__(self, config):
-    with open(config['matches_data_file']) as f:
-      matches_data = json.load(f)
+    matches_data = json.load(urllib.urlopen(config['matches_data_source']))
     self.teams = Teams(matches_data)
     self.matches = Matches(matches_data, self.teams)
     self.players = Players(config['base_file'], config['admin_id'])
@@ -281,6 +281,13 @@ class Players(object):
       return None
     return Player(id, res[0], res[1], res[2])
 
+  def getAllPlayers(self):
+    players = []
+    with self.db() as db:
+      for row in db.execute('''SELECT first_name, last_name, display_name, id FROM players'''):
+        players.append(Player(res[3], res[0], res[1], res[2]))
+    return players
+
   def createPlayer(self, id, first_name, last_name):
     with self.db() as db:
       db.execute('''INSERT INTO players (id, first_name, last_name, display_name)
@@ -339,6 +346,13 @@ class Predictions(object):
         predictions.append((player, res))
     predictions.sort(key=lambda p: p[0].name)
     return predictions
+
+  def genResults(self):
+    results = {
+      'matches': [],
+      'predictions': []
+    }
+    return results
 
   def db(self):
    return dbopen(self.db_path)
