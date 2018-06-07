@@ -19,6 +19,7 @@ import threading
 import time
 import traceback
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 from database import Database, Result
 
@@ -27,7 +28,8 @@ MSK_TZ = pytz.timezone('Europe/Moscow')
 UPDATE_INTERVAL = timedelta(seconds=60)
 
 BOT_USERNAME = '@delaytevashistavkibot'
-HELP_MSG = u'Жми /bet, чтобы сделать новую ставку или изменить существующую. /mybets, чтобы посмотреть свои ставки.'
+PRESS_BET = u'Жми /bet, чтобы сделать новую ставку или изменить существующую.'
+HELP_MSG = PRESS_BET + u' /mybets, чтобы посмотреть свои ставки.'
 START_MSG = u'Привет, %s! Поздравляю, ты в игре!\n'
 SEND_PRIVATE_MSG = u'Tcccc, не пали контору. Напиши мне личное сообщение (%s).' % BOT_USERNAME
 NAVIGATION_ERROR = u'Сорян, что-то пошло не так в строке %d. Попробуй еще раз.\n' + HELP_MSG
@@ -35,13 +37,12 @@ NO_MATCHES_MSG = u'Уже не на что ставить =('
 SCORE_REQUEST = u'Сколько голов забьет %s%s?'
 WINNER_REQUEST = u'Кто победит по пенальти?'
 TOO_LATE_MSG = u'Уже поздно ставить на этот матч. Попробуй поставить на другой.\n' + HELP_MSG
-CONFIRMATION_MSG = u'Ставка %s%s %s%d:%d%s %s%s сделана %s. Начало матча %s по Москве. Удачи, %s!\n' + HELP_MSG
-NO_BETS_MSG = u'Ты еще не сделал(а) ни одной ставки.\n' + HELP_MSG
+CONFIRMATION_MSG = u'Ставка %s сделана %s. Начало матча %s по Москве. Удачи, %s!\n' + HELP_MSG
+NO_BETS_MSG = u'Ты еще не сделал(а) ни одной ставки. ' + PRESS_BET
 RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
 CHOOSE_MATCH_TITLE = u'Выбери матч'
 LEFT_ARROW = u'\u2b05'
 RIGHT_ARROW = u'\u27a1'
-BALL = u'\u26bd'
 NOT_REGISTERED=u'Ты пока не зарегистрирован(а). Напиши пользователю @dzhioev для получения доступа.'
 ALREADY_REGISTERED=u'%s (%s) уже зарегистрирован(а).'
 REGISTER_SHOULD_BE_REPLY=u'Сообщение о регистрации должно быть ответом.'
@@ -71,10 +72,7 @@ def post_results(config, match_id, post_now=False):
   bot = telebot.TeleBot(config['token'])
   lines = []
   for p, r in db.predictions.getForMatch(match):
-    lines.append('_%s_ %s%d - %d%s' % (p.name(), BALL if r.penalty_win1() else '',
-                                                 r.goals1,
-                                                 r.goals2,
-                                                 BALL if r.penalty_win2() else ''))
+    lines.append('_%s_ %s' % (p.name(), r.label()))
   msg = RESULTS_TITLE % (match.team1.name, match.team2.name) + '\n'.join(lines)
   bot.send_message(config['group_id'], msg, parse_mode='Markdown')
 
@@ -91,7 +89,7 @@ def update_job(config, bot_runner, stopped_event):
     try:
       db = Database(config)
       bot_runner.replace_db(Database(config))
-      results = db.predictions.genResults()
+      results = db.predictions.genResults(utcnow())
       tmp_file = None
       try:
         with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -169,23 +167,13 @@ class BotRunner(threading.Thread):
     page = min(page, pages_number - 1)
     matches = matches[page * MATCHES_PER_PAGE:(page + 1) * MATCHES_PER_PAGE]
     keyboard = telebot.types.InlineKeyboardMarkup(1)
-    predictions = {}
+    predictions = defaultdict(lambda: None)
     for m, r in db.predictions.getForPlayer(player):
       predictions[m.id()] = r
     for m in matches:
       start_time_str = m.start_time().astimezone(MSK_TZ).strftime('%d.%m %H:%M')
-      if m.id() in predictions:
-        p = predictions[m.id()]
-        label = u'%s: %s%s %s%d:%d%s %s%s %s' % \
-                    (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
-                     BALL if p.penalty_win1() else '', p.goals(0), p.goals(1),
-                     BALL if p.penalty_win2() else '', m.team(1).short_name(), m.team(1).flag(),
-                     start_time_str)
-      else:
-        label = u'%s: %s%s - %s%s %s' % \
-                    (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
-                     m.team(1).short_name(), m.team(1).flag(), start_time_str)
-
+      label = '%s: %s %s' % (m.short_round(), m.label(predictions[m.id()], short=True),
+                             start_time_str)
       button = telebot.types.InlineKeyboardButton(label,
                                                   callback_data='b_%s' % m.id())
       keyboard.add(button)
@@ -258,11 +246,8 @@ class BotRunner(threading.Thread):
 
       lines = []
       for m, r in predictions:
-        lines.append('%s: %s%s %s%d:%d%s %s%s' %
-                         (m.short_round(), m.team(0).flag(), m.team(0).short_name(),
-                          BALL if r.penalty_win1() else '', r.goals(0), r.goals(1),
-                          BALL if r.penalty_win2() else '', m.team(1).short_name(),
-                          m.team(1).flag()))
+        lines.append('%s: %s' % (m.short_round(), m.label(r, short=True)))
+      lines.append(PRESS_BET)
       bot.send_message(message.chat.id, '\n'.join(lines))
 
     # keep last
@@ -357,11 +342,8 @@ class BotRunner(threading.Thread):
                             .strftime(u'%d.%m в %H:%M'.encode('utf-8')).decode('utf-8')
       bet_time_str = now.astimezone(MSK_TZ)\
                         .strftime(u'%d.%m в %H:%M:%S'.encode('utf-8')).decode('utf-8')
-      msg = CONFIRMATION_MSG % (
-           match.team(0).flag(), match.team(0).name(), BALL if result.penalty_win1() else '', \
-           result.goals(0), result.goals(1), BALL if result.penalty_win2() else '',
-           match.team(1).name(), match.team(1).flag(), bet_time_str, start_time_str,
-           player.short_name())
+      msg = CONFIRMATION_MSG % (match.label(result) , bet_time_str, start_time_str,
+                                player.short_name())
       return edit_message(msg)
 
     bot.polling(none_stop=True, timeout=1)
@@ -369,11 +351,15 @@ class BotRunner(threading.Thread):
   def stop_bot(self):
     self.bot.stop_polling()
 
-def main(config, just_dump):
+def main(config, just_dump, results_date):
   if just_dump:
     db = Database(config)
     print(str(db.teams))
     print(str(db.matches))
+  if results_date is not None:
+    db = Database(config)
+    print(json.dumps(db.predictions.genResults(results_date), indent=2, sort_keys=True))
+  if just_dump or results_date is not None:
     return
   telebot.logger.setLevel(logging.INFO)
   logging.basicConfig(format=
@@ -395,12 +381,20 @@ def main(config, just_dump):
   if exception_event.is_set():
     return 1
 
+def date_arg(s):
+  try:
+    return pytz.utc.localize(datetime.strptime(s, '%Y-%m-%d %H:%M'))
+  except ValueError:
+    raise argparse.ArgumentTypeError('Not a valid date: %s' % s)
+
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('config')
   parser.add_argument('-d', '--dump', help='Print teams and matches and exit',
                       action='store_true')
+  parser.add_argument('-r', '--results', help='Print results json and exit',
+                      nargs='?', const=utcnow(), type=date_arg)
   args = parser.parse_args(sys.argv[1:])
   with open(args.config) as config_file:
     config = json.load(config_file)
-  sys.exit(main(config, args.dump))
+  sys.exit(main(config, args.dump, args.results))

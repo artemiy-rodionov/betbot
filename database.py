@@ -5,12 +5,16 @@ import pytz
 import re
 import sqlite3
 import urllib
+from collections import defaultdict
 
 import dateutil.parser
 
 from sqlite_context import dbopen
 
 BLANK_FLAG=u'\U0001F3F3\uFE0F'
+ZWNBSP=u'\uFEFF'
+
+MSK_TZ = pytz.timezone('Europe/Moscow')
 
 def iter_matches(matches_info):
   for tour in ['groups', 'knockout']:
@@ -123,6 +127,8 @@ class Result(object):
       self.winner = 0 if goals1 == goals2 else (1 if goals1 > goals2 else 2)
     else:
       self.winner = winner
+    assert((self.goals1 <= self.goals2 or self.winner == 1) and
+           (self.goals1 >= self.goals2 or self.winner == 2))
 
   def goals(self, index):
     return (self.goals1, self.goals2)[index]
@@ -132,6 +138,21 @@ class Result(object):
 
   def penalty_win2(self):
     return self.goals1 == self.goals2 and self.winner == 2
+
+  def label(self):
+    BALL = u'\u26bd'
+    return '%s%d - %d%s' % (BALL if self.penalty_win1() else '', self.goals1,
+                            self.goals2, BALL if self.penalty_win2() else '')
+
+  def score(self, prediction):
+    p = prediction
+    if p is None:
+      return 0
+    return (int(self.winner == p.winner) +
+            int((self.goals1 - self.goals2) == (p.goals1 - p.goals2)) +
+            int(self.goals1 == p.goals1 and self.goals2 == p.goals2) +
+            int(self.winner != 0 and (self.goals1 == self.goals2) and (p.goals1 == p.goals2)))
+
 
   def __str__(self):
     return "%d - %d (%d)" % (self.goals1, self.goals2, self.winner)
@@ -209,6 +230,12 @@ class Match(object):
   def is_finished(self):
     return self._is_finished
 
+  def label(self, result, short=False):
+    t0, t1 = self.team(0), self.team(1)
+    return '%s%s%s %s %s%s%s' % (t0.flag(), ZWNBSP, t0.short_name() if short else t0.name(),
+                                 '-' if result is None else result.label(),
+                                 t1.short_name() if short else t1.name(), ZWNBSP, t1.flag())
+
   def __str__(self):
     res = '%s (%s) %s - %s (%s)' % (self.id(), self.round(), self.team(0).short_name(),
                                     self.team(1).short_name(), self.start_time())
@@ -229,7 +256,11 @@ class Matches(object):
 
   def getMatchesAfter(self, time):
     return sorted([m for m in self.matches.values() if m.start_time() > time],
-                  key=lambda m: m.start_time())
+                  key=lambda m: (m.start_time(), not m.is_finished(), m.id()))
+
+  def getMatchesBefore(self, time):
+    return sorted([m for m in self.matches.values() if m.start_time() <= time],
+                  key=lambda m: (m.start_time(), not m.is_finished(), m.id()))
 
   def getMatch(self, match_id):
     return self.matches[match_id]
@@ -285,7 +316,7 @@ class Players(object):
     players = []
     with self.db() as db:
       for row in db.execute('''SELECT first_name, last_name, display_name, id FROM players'''):
-        players.append(Player(res[3], res[0], res[1], res[2]))
+        players.append(Player(row[3], row[0], row[1], row[2]))
     return players
 
   def createPlayer(self, id, first_name, last_name):
@@ -347,11 +378,38 @@ class Predictions(object):
     predictions.sort(key=lambda p: p[0].name)
     return predictions
 
-  def genResults(self):
+  def genResults(self, now):
+    players = self.players.getAllPlayers()
+    matches = self.matches.getMatchesBefore(now)
+    predictions = defaultdict(lambda: defaultdict(lambda: None))
+    with self.db() as db:
+      for row in db.execute('''SELECT player_id, match_id, result FROM predictions
+                               WHERE match_id IN (%s)''' % ','.join('?' * len(matches)),
+                            tuple(m.id() for m in matches)):
+        predictions[row[0]][row[1]] = row[2]
     results = {
       'matches': [],
-      'predictions': []
+      'players': defaultdict(lambda:{'predictions': []})
     }
+    for match in matches:
+      results['matches'].append({
+        'id': match.id(),
+        'label': match.label(match.result()),
+        'round': match.short_round(),
+        'time': match.start_time().astimezone(MSK_TZ).strftime('%d.%m.%Y %H:%M')
+      })
+      for player in players:
+        p = predictions[int(player.id())][int(match.id())]
+        results['players'][player.id()]['predictions'].append({
+          'result': None if p is None else p.label(),
+          'score': None if not match.is_finished() else match.result().score(p)
+        })
+    for player in players:
+      score = sum(0 if s['score'] is None else s['score']
+                      for s in results['players'][player.id()]['predictions'])
+      results['players'][player.id()]['name'] = player.name()
+      results['players'][player.id()]['score'] = score
+      results['players'][player.id()]['is_queen'] = False
     return results
 
   def db(self):
