@@ -59,26 +59,6 @@ def lineno():
 def utcnow():
   return pytz.utc.localize(datetime.utcnow())
 
-def post_results(config, match_id, post_now=False):
-  print 'Spawned process for match %s' % match_id
-  telebot.logger.setLevel(logging.INFO)
-  db = Database(config)
-  match = db.matches.getMatch(match_id)
-  if not post_now:
-    now = utcnow()
-    if now > match.time:
-      delay = 0
-    else:
-      delay = (match.time - now).total_seconds()
-    print 'Going to sleep for %s seconds.' % delay
-    sleep(delay)
-  bot = telebot.TeleBot(config['token'])
-  lines = []
-  for p, r in db.predictions.getForMatch(match):
-    lines.append('_%s_ %s' % (p.name(), r.label()))
-  msg = RESULTS_TITLE % (match.team1.name, match.team2.name) + '\n'.join(lines)
-  bot.send_message(config['group_id'], msg, parse_mode='Markdown')
-
 def create_bot(config):
   return telebot.TeleBot(config['token'], threaded=False)
 
