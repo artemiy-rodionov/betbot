@@ -172,8 +172,8 @@ class BotRunner(threading.Thread):
       predictions[m.id()] = r
     for m in matches:
       start_time_str = m.start_time().astimezone(MSK_TZ).strftime('%d.%m %H:%M')
-      label = '%s: %s %s' % (m.short_round(), m.label(predictions[m.id()], short=True),
-                             start_time_str)
+      label = u'%s: %s %s' % (m.short_round(), m.label(predictions[m.id()], short=True),
+                              start_time_str)
       button = telebot.types.InlineKeyboardButton(label,
                                                   callback_data='b_%s' % m.id())
       keyboard.add(button)
@@ -199,6 +199,7 @@ class BotRunner(threading.Thread):
     bot = self.bot
     @bot.message_handler(func=lambda m: m.chat.type != 'private')
     def on_not_private(message):
+      print(json.dumps(message.json))
       bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
                        reply_to_message_id=message.message_id)
 
@@ -331,12 +332,11 @@ class BotRunner(threading.Thread):
         return edit_message(WINNER_REQUEST, reply_markup=keyboard)
 
       now = utcnow()
-      logging.info('prediction player: %s match: %s result: %s time: %s' %
-                       (player.id(), match.id(), str(result), now))
-
       if match.start_time() < now:
         return edit_message(TOO_LATE_MSG)
 
+      logging.info('prediction player: %s match: %s result: %s time: %s' %
+                       (player.id(), match.id(), str(result), now))
       db.predictions.addPrediction(player, match, result, now)
       start_time_str = match.start_time().astimezone(MSK_TZ)\
                             .strftime(u'%d.%m в %H:%M'.encode('utf-8')).decode('utf-8')

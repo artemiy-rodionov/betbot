@@ -13,6 +13,8 @@ from sqlite_context import dbopen
 
 BLANK_FLAG=u'\U0001F3F3\uFE0F'
 ZWNBSP=u'\uFEFF'
+CUP = u'\U0001F3C6'
+BRONZE_MEDAL = u'\U0001F949'
 
 MSK_TZ = pytz.timezone('Europe/Moscow')
 
@@ -66,6 +68,13 @@ class Team(object):
 
   def flag(self):
     return self._flag
+
+  def label(self, left_flag=True, short=False):
+    name = self.short_name() if short else self.name() 
+    if left_flag:
+      return '%s%s%s' % (self.flag(), ZWNBSP, name)
+    else:
+      return '%s%s%s' % (name, ZWNBSP, self.flag())
 
   def __str__(self):
     return ('%s: %s <%s> %s' % (self.id(), self.name(), self.short_name(), self.flag()))\
@@ -179,11 +188,11 @@ class Match(object):
     'Group F': 'F',
     'Group G': 'G',
     'Group H': 'H',
-    'Round of 16': '1/8',
-    'Quarter-finals': '1/4',
-    'Semi-finals': '1/2',
-    'Third place play-off': '3rd',
-    'Final': 'Final'
+    'Round of 16': u'⅛',
+    'Quarter-finals': u'¼',
+    'Semi-finals': u'½',
+    'Third place play-off': BRONZE_MEDAL,
+    'Final': CUP
   }
 
   @staticmethod
@@ -232,9 +241,9 @@ class Match(object):
 
   def label(self, result, short=False):
     t0, t1 = self.team(0), self.team(1)
-    return '%s%s%s %s %s%s%s' % (t0.flag(), ZWNBSP, t0.short_name() if short else t0.name(),
-                                 '-' if result is None else result.label(),
-                                 t1.short_name() if short else t1.name(), ZWNBSP, t1.flag())
+    return '%s %s %s' % (t0.label(left_flag=True, short=short),
+                         '-' if result is None else result.label(),
+                         t1.label(left_flag=False, short=short))
 
   def __str__(self):
     res = '%s (%s) %s - %s (%s)' % (self.id(), self.round(), self.team(0).short_name(),
@@ -394,9 +403,13 @@ class Predictions(object):
     for match in matches:
       results['matches'].append({
         'id': match.id(),
+        'team0': match.team(0).label(),
+        'team1': match.team(1).label(),
+        'result': match.result().label() if match.result() is not None else '―',
         'label': match.label(match.result()),
         'round': match.short_round(),
-        'time': match.start_time().astimezone(MSK_TZ).strftime('%d.%m.%Y %H:%M')
+        'time': match.start_time().astimezone(MSK_TZ).strftime('%d.%m %H:%M'),
+        'short_label': match.label(None, short=True)
       })
       for player in players:
         p = predictions[int(player.id())][int(match.id())]
