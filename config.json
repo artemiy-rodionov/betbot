@@ -5,5 +5,6 @@
  "results_file": "/var/cache/betting/www/results.json",
  "matches_data_source": "https://raw.githubusercontent.com/lsv/fifa-worldcup-2018/master/data.json",
  "token": "<BOT TOKEN>",
- "admin_id": <ADMIN TELEGRAM ID>
+ "admin_id": <ADMIN TELEGRAM ID>,
+ "group_id": <GROUP TELEGRAM ID>
 }
