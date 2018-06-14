@@ -31,7 +31,7 @@ function build_table() {
     for (var id in players) {
       var p = players[id];
       var tr = $('<tr>');
-      tr.append('<th>' + p['name'] + '</th>');
+      tr.append('<th>' + p['name'] + (p['is_queen'] ? ' ♕' : '') + '</th>');
       tr.append('<th class="score"> ' + p['score'] + ' </th>');
       var predictions = p['predictions'];
       for (var i = 0; i < predictions.length; ++i) {
@@ -59,7 +59,7 @@ function build_table() {
       info: false,
       searching: false,
       scrollX: true,
-      scrollY: '100vh',
+      scrollY: '90vh',
       scrollCollapse: true,
       order: [[1, 'desc']],
       fixedColumns: {

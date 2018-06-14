@@ -278,11 +278,12 @@ class Matches(object):
      return '\n'.join(str(m) for m in sorted(self.matches.values(), key=Match.start_time))
 
 class Player(object):
-  def __init__(self, id, first_name, last_name, display_name):
+  def __init__(self, id, first_name, last_name, display_name, is_queen):
     self._id = id
     self._first_name = first_name
     self._last_name = last_name
     self._display_name = display_name
+    self._is_queen = is_queen
 
   def id(self):
     return self._id
@@ -302,6 +303,9 @@ class Player(object):
            self._display_name if self._display_name is not None else \
            '<id: %d>' % self._id
 
+  def is_queen(self):
+    return self._is_queen
+
   def __str__(self):
     return '%s (%d)' % (self.name(), self.id())
 
@@ -311,27 +315,29 @@ class Players(object):
     self.admin_id = admin_id
     with self.db() as db:
       db.execute('''CREATE TABLE IF NOT EXISTS players
-                    (id integer, first_name text, last_name text, display_name text)''')
+                    (id integer, first_name text, last_name text, display_name text,
+                     is_queen integer not null default 1)''')
 
   def getPlayer(self, id):
     with self.db() as db:
-      res = db.execute('''SELECT first_name, last_name, display_name
+      res = db.execute('''SELECT first_name, last_name, display_name, is_queen
                           FROM players WHERE id=?''', (id,)).fetchone()
     if res is None:
       return None
-    return Player(id, res[0], res[1], res[2])
+    return Player(id, res[0], res[1], res[2], bool(res[3]))
 
   def getAllPlayers(self):
     players = []
     with self.db() as db:
-      for row in db.execute('''SELECT first_name, last_name, display_name, id FROM players'''):
-        players.append(Player(row[3], row[0], row[1], row[2]))
+      for row in db.execute('''SELECT first_name, last_name, display_name, is_queen, id
+                               FROM players'''):
+        players.append(Player(row[4], row[0], row[1], row[2], bool(row[3])))
     return players
 
-  def createPlayer(self, id, first_name, last_name):
+  def createPlayer(self, id, first_name, last_name, is_queen=False):
     with self.db() as db:
-      db.execute('''INSERT INTO players (id, first_name, last_name, display_name)
-                    VALUES (?,?,?,?)''', (id, first_name, last_name, None))
+      db.execute('''INSERT INTO players (id, first_name, last_name, display_name, is_queen)
+                    VALUES (?,?,?,?,?)''', (id, first_name, last_name, None, int(is_queen)))
     return self.getPlayer(id)
 
   def isRegistered(self, id):
@@ -339,6 +345,10 @@ class Players(object):
 
   def isAdmin(self, id):
     return id == self.admin_id
+
+  def changeIsQueen(self, id, is_queen):
+    with self.db() as db:
+      db.execute('''UPDATE players SET is_queen=? WHERE id=?''', (int(is_queen), id))
 
   def db(self):
    return dbopen(self.db_path)
@@ -422,7 +432,7 @@ class Predictions(object):
                       for s in results['players'][player.id()]['predictions'])
       results['players'][player.id()]['name'] = player.name()
       results['players'][player.id()]['score'] = score
-      results['players'][player.id()]['is_queen'] = False
+      results['players'][player.id()]['is_queen'] = player.is_queen()
     return results
 
   def db(self):

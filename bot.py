@@ -52,6 +52,8 @@ REGISTER_SHOULD_BE_REPLY_TO_FORWARD=u'Сообщение о регистраци
 REGISTRATION_SUCCESS=u'%s aka %s (%s) успешно зарегистрирован.'
 ERROR_MESSAGE_ABSENT=u'Этот виджет сломан, вызови /bet снова.'
 CHECK_RESULTS_BUTTON=u'Посмотреть ставки'
+USER_NOT_REGISTERED=u'Пользователь не зарегистрирован.'
+SUCCESS=u'Успех.'
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
@@ -198,15 +200,20 @@ class BotRunner(threading.Thread):
       bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
                        reply_to_message_id=message.message_id)
 
-    @bot.message_handler(commands=['register'], func=lambda m: self.is_admin(m.from_user))
-    def register(message):
+    def check_forwarded_from(message):
       if message.reply_to_message is None:
         bot.send_message(message.chat.id, REGISTER_SHOULD_BE_REPLY)
-        return
+        return None
       if message.reply_to_message.forward_from is None:
         bot.send_message(message.chat.id, REGISTER_SHOULD_BE_REPLY_TO_FORWARD)
+        return None
+      return message.reply_to_message.forward_from
+
+    @bot.message_handler(commands=['register'], func=lambda m: self.is_admin(m.from_user))
+    def register(message):
+      forward_from = check_forwarded_from(message)
+      if foward_from is None:
         return
-      forward_from = message.reply_to_message.forward_from
       if self.is_registered(forward_from):
         player = self.get_player(forward_from)
         bot.send_message(message.chat.id, ALREADY_REGISTERED % (player.name(), player.id()))
@@ -216,6 +223,24 @@ class BotRunner(threading.Thread):
                                                                 player.id()))
       bot.send_message(player.id(), START_MSG % player.short_name() + HELP_MSG % self.results_url,
                        parse_mode='Markdown')
+
+    def change_queen(message, is_queen):
+      forward_from = check_forwarded_from(message)
+      if forward_from is None:
+        return
+      if not self.is_registered(forward_from):
+        bot.send_message(message.chat.id, USER_NOT_REGISTERED)
+        return
+      self.get_db().players.changeIsQueen(forward_from.id, is_queen)
+      bot.send_message(message.chat.id, SUCCESS)
+
+    @bot.message_handler(commands=['make_queen'], func=lambda m: self.is_admin(m.from_user))
+    def make_queen(message):
+      change_queen(message, True)
+
+    @bot.message_handler(commands=['unmake_queen'], func=lambda m: self.is_admin(m.from_user))
+    def unmake_queen(message):
+      change_queen(message, False)
 
     @bot.message_handler(func=lambda m: not self.is_registered(m.from_user))
     def on_not_registered(message):
