@@ -39,8 +39,8 @@ function build_table() {
         var score = predictions[i]['score'];
         tr.append('<th>' + ((res == null) ? '-' : res) + '</th>');
         tr.append('<th class="score">' + ((score == null) ? '' : score) + '</th>');
-        tbody.append(tr);
       }
+      tbody.append(tr);
     }
     table.append(thead, tbody, tfoot);
     $('body').append(table);
