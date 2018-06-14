@@ -28,8 +28,10 @@ MSK_TZ = pytz.timezone('Europe/Moscow')
 UPDATE_INTERVAL = timedelta(seconds=60)
 
 BOT_USERNAME = '@delaytevashistavkibot'
+RESULTS_TABLE = u'Таблица результатов [доступна по ссылке](%s).'
 PRESS_BET = u'Жми /bet, чтобы сделать новую ставку или изменить существующую.'
-HELP_MSG = PRESS_BET + u' /mybets, чтобы посмотреть свои ставки.'
+MY_BETS = u'/mybets, чтобы посмотреть свои ставки.'
+HELP_MSG = PRESS_BET + ' ' + MY_BETS + ' ' + RESULTS_TABLE
 START_MSG = u'Привет, %s! Поздравляю, ты в игре!\n'
 SEND_PRIVATE_MSG = u'Tcccc, не пали контору. Напиши мне личное сообщение (%s).' % BOT_USERNAME
 NAVIGATION_ERROR = u'Сорян, что-то пошло не так в строке %d. Попробуй еще раз.\n' + HELP_MSG
@@ -39,7 +41,7 @@ WINNER_REQUEST = u'Кто победит по пенальти?'
 TOO_LATE_MSG = u'Уже поздно ставить на этот матч. Попробуй поставить на другой.\n' + HELP_MSG
 CONFIRMATION_MSG = u'Ставка %s сделана %s. Начало матча %s по Москве. Удачи, %s!\n' + HELP_MSG
 NO_BETS_MSG = u'Ты еще не сделал(а) ни одной ставки. ' + PRESS_BET
-RESULTS_TITLE = u'Ставки сделаны, ставок больше нет.\n*%s - %s*\n'
+RESULTS_TITLE = u'Ставки сделаны, ставок больше нет. Начинается матч %s.'
 CHOOSE_MATCH_TITLE = u'Выбери матч'
 LEFT_ARROW = u'\u2b05'
 RIGHT_ARROW = u'\u27a1'
@@ -49,6 +51,7 @@ REGISTER_SHOULD_BE_REPLY=u'Сообщение о регистрации долж
 REGISTER_SHOULD_BE_REPLY_TO_FORWARD=u'Сообщение о регистрации должно быть ответом на форвард.'
 REGISTRATION_SUCCESS=u'%s aka %s (%s) успешно зарегистрирован.'
 ERROR_MESSAGE_ABSENT=u'Этот виджет сломан, вызови /bet снова.'
+CHECK_RESULTS_BUTTON=u'Посмотреть ставки'
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
@@ -82,13 +85,15 @@ def create_bot(config):
 def update_job(config, bot_runner, stopped_event):
   last_update = utcnow() - UPDATE_INTERVAL
   logging.info('starting update loop')
+  db = Database(config)
+  matches_to_notify = {m.id() for m in db.matches.getMatchesAfter(utcnow())}
   while not stopped_event.is_set():
     time.sleep(1)
     if utcnow() - last_update <= UPDATE_INTERVAL:
       continue
     try:
       db = Database(config)
-      bot_runner.replace_db(Database(config))
+      bot_runner.replace_db(db)
       results = db.predictions.genResults(utcnow())
       tmp_file = None
       try:
@@ -101,6 +106,16 @@ def update_job(config, bot_runner, stopped_event):
         if tmp_file is not None and os.path.exists(tmp_file):
           os.unlink(tmp_file)
       last_update = utcnow()
+      bot = create_bot(config)
+      for m in db.matches.getMatchesBefore(last_update):
+        if m.id() not in matches_to_notify:
+          continue
+        matches_to_notify.remove(m.id())
+        keyboard = telebot.types.InlineKeyboardMarkup(1)
+        keyboard.add(telebot.types.InlineKeyboardButton(CHECK_RESULTS_BUTTON,
+                                                        url=config['results_url']))
+        bot.send_message(config['group_id'], RESULTS_TITLE % m.label(None), parse_mode='Markdown',
+                         reply_markup=keyboard)
       logging.info('update finished')
     except:
       logging.error(traceback.format_exc())
@@ -124,6 +139,7 @@ class BotRunner(threading.Thread):
     self.bot = create_bot(config)
     self.db_lock = threading.Lock()
     self.db = Database(config)
+    self.results_url = config['results_url']
 
   def get_db(self):
     with self.db_lock:
@@ -199,7 +215,6 @@ class BotRunner(threading.Thread):
     bot = self.bot
     @bot.message_handler(func=lambda m: m.chat.type != 'private')
     def on_not_private(message):
-      print(json.dumps(message.json))
       bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
                        reply_to_message_id=message.message_id)
 
@@ -219,7 +234,8 @@ class BotRunner(threading.Thread):
       player = self.register_player(message.reply_to_message.forward_from)
       bot.send_message(message.chat.id, REGISTRATION_SUCCESS % (player.name(), player.short_name(),
                                                                 player.id()))
-      bot.send_message(player.id(), START_MSG % player.short_name() + HELP_MSG)
+      bot.send_message(player.id(), START_MSG % player.short_name() + HELP_MSG % self.results_url,
+                       parse_mode='Markdown')
 
     @bot.message_handler(func=lambda m: not self.is_registered(m.from_user))
     def on_not_registered(message):
@@ -248,13 +264,13 @@ class BotRunner(threading.Thread):
       lines = []
       for m, r in predictions:
         lines.append('%s: %s' % (m.short_round(), m.label(r, short=True)))
-      lines.append(PRESS_BET)
-      bot.send_message(message.chat.id, '\n'.join(lines))
+      lines.append(PRESS_BET + ' ' + RESULTS_TABLE % self.results_url)
+      bot.send_message(message.chat.id, '\n'.join(lines), parse_mode='Markdown')
 
     # keep last
     @bot.message_handler(func=lambda m: True)
     def help(message):
-      bot.send_message(message.chat.id, HELP_MSG)
+      bot.send_message(message.chat.id, HELP_MSG % self.results_url, parse_mode='Markdown')
 
     # l_<page>
     # b_<match_id>
@@ -275,10 +291,12 @@ class BotRunner(threading.Thread):
 
       def edit_message(text, **kwargs):
         bot.edit_message_text(text, chat_id=query.message.chat.id,
-                              message_id=query.message.message_id, **kwargs)
+                              message_id=query.message.message_id,
+                              parse_mode='Markdown',
+                              **kwargs)
 
       def on_error(line_no):
-        edit_message(NAVIGATION_ERROR % line_no)
+        edit_message(NAVIGATION_ERROR % (line_no, self.results_url))
 
       m = re.match(r'^b_([^_]*)$', data) or \
           re.match(r'^b_([^_]*)_([0-9])$', data) or \
@@ -333,7 +351,7 @@ class BotRunner(threading.Thread):
 
       now = utcnow()
       if match.start_time() < now:
-        return edit_message(TOO_LATE_MSG)
+        return edit_message(TOO_LATE_MSG % self.results_url)
 
       logging.info('prediction player: %s match: %s result: %s time: %s' %
                        (player.id(), match.id(), str(result), now))
@@ -343,7 +361,7 @@ class BotRunner(threading.Thread):
       bet_time_str = now.astimezone(MSK_TZ)\
                         .strftime(u'%d.%m в %H:%M:%S'.encode('utf-8')).decode('utf-8')
       msg = CONFIRMATION_MSG % (match.label(result) , bet_time_str, start_time_str,
-                                player.short_name())
+                                player.short_name(), self.results_url)
       return edit_message(msg)
 
     bot.polling(none_stop=True, timeout=1)
