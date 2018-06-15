@@ -239,7 +239,7 @@ class Match(object):
   def is_finished(self):
     return self._is_finished
 
-  def label(self, result, short=False):
+  def label(self, result=None, short=False):
     t0, t1 = self.team(0), self.team(1)
     return '%s %s %s' % (t0.label(left_flag=True, short=short),
                          '-' if result is None else result.label(),
@@ -392,7 +392,7 @@ class Predictions(object):
       for row in db.execute('''SELECT player_id, result FROM predictions
                                WHERE match_id=?''', (match.id,)):
         res = row[1]
-        player = self.players.getOrCreatePlayer(row[0])
+        player = self.players.getPlayer(row[0])
         predictions.append((player, res))
     predictions.sort(key=lambda p: p[0].name)
     return predictions
@@ -435,7 +435,13 @@ class Predictions(object):
       results['players'][player.id()]['is_queen'] = player.is_queen()
     return results
 
+  def getMissingPlayers(self, match_id):
+    with self.db() as db:
+      rows = db.execute('''SELECT id FROM players WHERE id NOT IN
+                               (SELECT player_id FROM predictions WHERE match_id = ?)''',
+                        (match_id,))
+      return [row[0] for row in rows]
+
+
   def db(self):
    return dbopen(self.db_path)
-
-

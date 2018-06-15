@@ -26,6 +26,7 @@ from database import Database, Result
 MATCHES_PER_PAGE = 8
 MSK_TZ = pytz.timezone('Europe/Moscow')
 UPDATE_INTERVAL = timedelta(seconds=60)
+REMIND_BEFORE = timedelta(minutes=30)
 
 BOT_USERNAME = '@delaytevashistavkibot'
 RESULTS_TABLE = u'Таблица результатов [доступна по ссылке](%s).'
@@ -54,6 +55,7 @@ ERROR_MESSAGE_ABSENT=u'Этот виджет сломан, вызови /bet с�
 CHECK_RESULTS_BUTTON=u'Посмотреть ставки'
 USER_NOT_REGISTERED=u'Пользователь не зарегистрирован.'
 SUCCESS=u'Успех.'
+REMIND_MSG=u'Уж встреча близится, а ставочки все нет.'
 
 def lineno():
   return inspect.currentframe().f_back.f_lineno
@@ -64,11 +66,19 @@ def utcnow():
 def create_bot(config):
   return telebot.TeleBot(config['token'], threaded=False)
 
+def create_match_button(match, prediction=None):
+  start_time_str = match.start_time().astimezone(MSK_TZ).strftime('%d.%m %H:%M')
+  label = u'%s: %s %s' % (match.short_round(), match.label(prediction, short=True),
+                          start_time_str)
+  return telebot.types.InlineKeyboardButton(label,
+                                            callback_data='b_%s' % match.id())
+
 def update_job(config, bot_runner, stopped_event):
   last_update = utcnow() - UPDATE_INTERVAL
   logging.info('starting update loop')
   db = Database(config)
   matches_to_notify = {m.id() for m in db.matches.getMatchesAfter(utcnow())}
+  matches_to_remind = {m.id() for m in db.matches.getMatchesAfter(utcnow() + REMIND_BEFORE)}
   while not stopped_event.is_set():
     time.sleep(1)
     if utcnow() - last_update <= UPDATE_INTERVAL:
@@ -96,8 +106,17 @@ def update_job(config, bot_runner, stopped_event):
         keyboard = telebot.types.InlineKeyboardMarkup(1)
         keyboard.add(telebot.types.InlineKeyboardButton(CHECK_RESULTS_BUTTON,
                                                         url=config['results_url']))
-        bot.send_message(config['group_id'], RESULTS_TITLE % m.label(None), parse_mode='Markdown',
+        bot.send_message(config['group_id'], RESULTS_TITLE % m.label(), parse_mode='Markdown',
                          reply_markup=keyboard)
+      for m in db.matches.getMatchesBefore(last_update + REMIND_BEFORE):
+        if m.id() not in matches_to_remind:
+          continue
+        matches_to_remind.remove(m.id())
+        for player_id in db.predictions.getMissingPlayers(m.id()):
+          keyboard = telebot.types.InlineKeyboardMarkup(1)
+          keyboard.add(create_match_button(m))
+          bot.send_message(player_id, REMIND_MSG, parse_mode='Markdown', reply_markup=keyboard)
+
       logging.info('update finished')
     except:
       logging.error(traceback.format_exc())
@@ -174,7 +193,7 @@ class BotRunner(threading.Thread):
                               start_time_str)
       button = telebot.types.InlineKeyboardButton(label,
                                                   callback_data='b_%s' % m.id())
-      keyboard.add(button)
+      keyboard.add(create_match_button(m, predictions[m.id()]))
     navs = []
     if pages_number > 1:
       navs.append(
@@ -212,7 +231,7 @@ class BotRunner(threading.Thread):
     @bot.message_handler(commands=['register'], func=lambda m: self.is_admin(m.from_user))
     def register(message):
       forward_from = check_forwarded_from(message)
-      if foward_from is None:
+      if forward_from is None:
         return
       if self.is_registered(forward_from):
         player = self.get_player(forward_from)

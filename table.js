@@ -59,7 +59,7 @@ function build_table() {
       info: false,
       searching: false,
       scrollX: true,
-      scrollY: '90vh',
+      scrollY: '100vh',
       scrollCollapse: true,
       order: [[1, 'desc']],
       fixedColumns: {
