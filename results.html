@@ -17,7 +17,7 @@
 
 <script src="table.js"></script>
 <script>
-$(build_table);
+$(redraw_table);
 </script>
 <style>
 table.dataTable th {
@@ -25,9 +25,11 @@ table.dataTable th {
   font-size: 30px !important;
   font-weight: normal !important;
 }
+
 .score {
   min-width: 2em;
 }
+
 .hidden {
   opacity: 0;
 }
@@ -38,4 +40,6 @@ table.dataTable th {
 
 </style>
 </head>
-<body class="hidden"></body>
+<body>
+<div id="container"></div>
+</body>
