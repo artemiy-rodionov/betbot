@@ -1,11 +1,12 @@
 {
- "log_file": "/var/cache/betting/betting.log",
- "base_file": "/var/cache/betting/base.sqlite",
- "virtualenv_path": "/var/cache/betting/virtualenv",
- "results_file": "/var/cache/betting/www/results.json",
- "matches_data_source": "https://raw.githubusercontent.com/lsv/fifa-worldcup-2018/master/data.json",
- "token": "<BOT TOKEN>",
- "admin_id": <ADMIN TELEGRAM ID>,
- "group_id": <GROUP TELEGRAM ID>,
- "results_url": "<RESULTS URL>"
+ "log_file": "instance/betting.log",
+ "data_file": "instance/fixtures.json",
+ "base_file": "instance/base.sqlite",
+ "results_file": "instance/results.json",
+ "data_file": "instance/data.json",
+ "token": "",
+ "admin_id": <bot-admin-id-int>,
+ "group_id": <telegram-group-id-int>,
+ "results_url": "<RESULTS URL>",
+ "api_token": "<api-football-token>"
 }

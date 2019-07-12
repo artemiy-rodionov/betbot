@@ -1,4 +1,4 @@
-pyTelegramBotAPI==3.6.3
+pyTelegramBotAPI==3.6.6
 pytz==2018.4
 six==1.11.0
 urllib3==1.22
