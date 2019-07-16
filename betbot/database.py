@@ -7,8 +7,8 @@ from collections import defaultdict
 
 import dateutil.parser
 
-from sqlite_context import dbopen
-import sources
+from .sqlite_context import dbopen
+from . import sources
 
 BLANK_FLAG = '\U0001F3F3\uFE0F'
 ZWNBSP = '\uFEFF'

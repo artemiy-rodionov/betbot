@@ -1,11 +1,9 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Created on Sat Jun 04 12:05:50 2016
 
 @author: SSundukov
 """
-import argparse
 import inspect
 import json
 import logging
@@ -13,7 +11,6 @@ import os
 import stat
 import pytz
 import re
-import sys
 import telebot
 import tempfile
 import threading
@@ -22,16 +19,10 @@ import traceback
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from database import Database, Result
-import sources
+from .database import Database, Result
+from . import sources
 
 telebot.logger.setLevel(logging.DEBUG)
-logging.basicConfig(
-    format= '%(asctime)s (%(filename)s:%(lineno)d %(threadName)s) %(levelname)s: "%(message)s"'
-)
-logging.getLogger().setLevel(logging.DEBUG)
-
-
 
 MATCHES_PER_PAGE = 8
 MSK_TZ = pytz.timezone('Europe/Moscow')
@@ -459,7 +450,7 @@ def dump_results(config, results_date):
         print(json.dumps(db.predictions.genResults(results_date), indent=2, sort_keys=True))
 
 
-def main(config):
+def start(config):
     stopped_event = threading.Event()
     exception_event = threading.Event()
     runner = BotRunner(config, stopped_event, exception_event)
@@ -475,30 +466,3 @@ def main(config):
         stopped_event.set()
         if exception_event.is_set():
             return True
-
-
-def date_arg(s):
-    try:
-        return pytz.utc.localize(datetime.strptime(s, '%Y-%m-%d %H:%M'))
-    except ValueError:
-        raise argparse.ArgumentTypeError('Not a valid date: %s' % s)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config')
-    parser.add_argument('-d', '--dump', help='Print teams and matches and exit',
-                        action='store_true')
-    parser.add_argument('-r', '--results', help='Print results json and exit',
-                        nargs='?', const=utcnow(), type=date_arg)
-    parser.add_argument('--update', help='Update json results and exit', action='store_true')
-    args = parser.parse_args(sys.argv[1:])
-    with open(args.config) as config_file:
-        config = json.load(config_file)
-        if args.dump:
-            result = dump_results(config, args.results)
-        elif args.update:
-            result = update_fixtures(config)
-        else:
-            result = main(config)
-        sys.exit(result)
