@@ -333,8 +333,8 @@ class BotRunner(threading.Thread):
             lines = []
             for m, r in predictions:
                 lines.append('%s: %s' % (m.short_round(), m.label(r, short=True)))
-                lines.append(PRESS_BET + ' ' + RESULTS_TABLE % self.results_url)
-                bot.send_message(message.chat.id, '\n'.join(lines), parse_mode='Markdown')
+            lines.append(PRESS_BET + ' ' + RESULTS_TABLE % self.results_url)
+            bot.send_message(message.chat.id, '\n'.join(lines), parse_mode='Markdown')
 
         # keep last
         @bot.message_handler(func=lambda m: True)
