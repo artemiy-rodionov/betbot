@@ -1,3 +1,4 @@
+import re
 from collections import defaultdict
 import json
 
@@ -40,7 +41,8 @@ def convert_api_season(data):
                 'fifaCode': team['team_name'],
                 'emojiString': None
             }
-        matches[fix['round']].append({
+        tour = re.search(r'\d+', fix['round']).group()
+        matches[tour].append({
             'date': fix['event_date'],
             'name': fix['fixture_id'],
             'type': 'group',
@@ -49,7 +51,7 @@ def convert_api_season(data):
             'home_team': fix['homeTeam']['team_id'],
             'away_team': fix['awayTeam']['team_id'],
             'finished': fix['statusShort'] == 'FT',
-            'round': fix['round']
+            'round': tour,
         })
     data['teams'] = teams.values()
     assert len(data['teams']) == 16
