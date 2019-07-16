@@ -443,6 +443,7 @@ def update_fixtures(config):
 
 
 def dump_info(config):
+    db = Database(config)
     print(str(db.teams))
     print(str(db.matches))
 
