@@ -32,8 +32,10 @@ if __name__ == '__main__':
     args = parser.parse_args(sys.argv[1:])
     with open(args.config) as config_file:
         config = json.load(config_file)
-        if args.dump:
+        if args.results:
             result = bot.dump_results(config, args.results)
+        elif args.dump:
+            result = bot.dump_info(config)
         elif args.update:
             result = bot.update_fixtures(config)
         else:

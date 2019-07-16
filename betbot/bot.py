@@ -442,10 +442,13 @@ def update_fixtures(config):
     sources.save_rfpl_fixtures(config)
 
 
-def dump_results(config, results_date):
-    db = Database(config)
+def dump_info(config):
     print(str(db.teams))
     print(str(db.matches))
+
+
+def dump_results(config, results_date):
+    db = Database(config)
     if results_date is not None:
         print(json.dumps(db.predictions.genResults(results_date), indent=2, sort_keys=True))
 
