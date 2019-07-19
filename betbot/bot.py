@@ -7,11 +7,9 @@ Created on Sat Jun 04 12:05:50 2016
 import inspect
 import json
 import logging
-import os
 import pytz
 import re
 import telebot
-import tempfile
 import threading
 import time
 import traceback
@@ -102,16 +100,9 @@ def update_job(config, bot_runner, stopped_event):
             db = Database(config)
             bot_runner.replace_db(db)
             results = db.predictions.genResults(utcnow())
-            tmp_file = None
-            try:
-                with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-                    tmp_file = f.name
-                    json.dump(results, f)
-                    os.chmod(tmp_file, 0o644)
-                    os.rename(tmp_file, config['results_file'])
-            finally:
-                if tmp_file is not None and os.path.exists(tmp_file):
-                    os.unlink(tmp_file)
+            with open(config['results_file'], 'w') as fp:
+                json.dump(results, fp)
+                logging.info(f'Results file dumped')
             last_update = utcnow()
             bot = create_bot(config)
             for m in db.matches.getMatchesBefore(last_update):
