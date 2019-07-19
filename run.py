@@ -13,7 +13,7 @@ from betbot import bot
 logging.basicConfig(
     format='%(asctime)s (%(filename)s:%(lineno)d %(threadName)s) %(levelname)s: "%(message)s"'
 )
-logging.getLogger().setLevel(logging.DEBUG)
+logging.getLogger().setLevel(logging.INFO)
 
 
 def date_arg(s):

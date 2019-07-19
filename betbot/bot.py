@@ -21,12 +21,13 @@ from collections import defaultdict
 from .database import Database, Result
 from . import sources
 
-telebot.logger.setLevel(logging.DEBUG)
+telebot.logger.setLevel(logging.INFO)
 
 MATCHES_PER_PAGE = 8
 MSK_TZ = pytz.timezone('Europe/Moscow')
 UPDATE_INTERVAL = timedelta(seconds=60)
 REMIND_BEFORE = timedelta(minutes=30)
+REMIND_DAY_BEFORE = timedelta(hours=24)
 
 BOT_USERNAME = '@clamps_bot'
 RESULTS_TABLE = 'Таблица результатов [доступна по ссылке](%s).'
@@ -59,6 +60,7 @@ CHECK_RESULTS_BUTTON = 'Посмотреть ставки'
 USER_NOT_REGISTERED = 'Пользователь не зарегистрирован.'
 SUCCESS = 'Успех.'
 REMIND_MSG = 'Уж встреча близится, а ставочки все нет.'
+REMIND_DAY_MSG = 'Матч начнется через сутки. Можно и ставку закинуть.'
 
 
 def lineno():
@@ -89,56 +91,72 @@ def update_job(config, bot_runner, stopped_event):
     matches_to_remind = {
         m.id() for m in db.matches.getMatchesAfter(utcnow() + REMIND_BEFORE)
     }
+    matches_day_to_remind = {
+        m.id() for m in db.matches.getMatchesAfter(utcnow() + REMIND_DAY_BEFORE)
+    }
     while not stopped_event.is_set():
         time.sleep(1)
         if utcnow() - last_update <= UPDATE_INTERVAL:
             continue
-    try:
-        db = Database(config)
-        bot_runner.replace_db(db)
-        results = db.predictions.genResults(utcnow())
-        tmp_file = None
         try:
-            with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-                tmp_file = f.name
-                json.dump(results, f)
-                os.chmod(tmp_file, 0o644)
-                os.rename(tmp_file, config['results_file'])
-        finally:
-            if tmp_file is not None and os.path.exists(tmp_file):
-                os.unlink(tmp_file)
-        last_update = utcnow()
-        bot = create_bot(config)
-        for m in db.matches.getMatchesBefore(last_update):
-            if m.id() not in matches_to_notify:
-                continue
-            matches_to_notify.remove(m.id())
-            keyboard = telebot.types.InlineKeyboardMarkup(1)
-            keyboard.add(telebot.types.InlineKeyboardButton(
-                CHECK_RESULTS_BUTTON, url=config['results_url']
-            ))
-            bot.send_message(
-                config['group_id'],
-                RESULTS_TITLE % m.label(),
-                parse_mode='Markdown',
-                reply_markup=keyboard
-            )
-        for m in db.matches.getMatchesBefore(last_update + REMIND_BEFORE):
-            if m.id() not in matches_to_remind:
-                continue
-            matches_to_remind.remove(m.id())
-        for player_id in db.predictions.getMissingPlayers(m.id()):
-            keyboard = telebot.types.InlineKeyboardMarkup(1)
-            keyboard.add(create_match_button(m))
-            bot.send_message(
-                player_id,
-                REMIND_MSG,
-                parse_mode='Markdown',
-                reply_markup=keyboard
-            )
-        logging.info('update finished')
-    except Exception:
-        logging.error(traceback.format_exc())
+            db = Database(config)
+            bot_runner.replace_db(db)
+            results = db.predictions.genResults(utcnow())
+            tmp_file = None
+            try:
+                with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+                    tmp_file = f.name
+                    json.dump(results, f)
+                    os.chmod(tmp_file, 0o644)
+                    os.rename(tmp_file, config['results_file'])
+            finally:
+                if tmp_file is not None and os.path.exists(tmp_file):
+                    os.unlink(tmp_file)
+            last_update = utcnow()
+            bot = create_bot(config)
+            for m in db.matches.getMatchesBefore(last_update):
+                if m.id() not in matches_to_notify:
+                    continue
+                matches_to_notify.remove(m.id())
+                keyboard = telebot.types.InlineKeyboardMarkup(1)
+                keyboard.add(telebot.types.InlineKeyboardButton(
+                    CHECK_RESULTS_BUTTON, url=config['results_url']
+                ))
+                bot.send_message(
+                    config['group_id'],
+                    RESULTS_TITLE % m.label(),
+                    parse_mode='Markdown',
+                    reply_markup=keyboard
+                )
+            for m in db.matches.getMatchesBefore(last_update + REMIND_BEFORE):
+                if m.id() not in matches_to_remind:
+                    continue
+                matches_to_remind.remove(m.id())
+                for player_id in db.predictions.getMissingPlayers(m.id()):
+                    keyboard = telebot.types.InlineKeyboardMarkup(1)
+                    keyboard.add(create_match_button(m))
+                    bot.send_message(
+                        player_id,
+                        REMIND_MSG,
+                        parse_mode='Markdown',
+                        reply_markup=keyboard
+                    )
+            for m in db.matches.getMatchesBefore(last_update + REMIND_DAY_BEFORE):
+                if m.id() not in matches_day_to_remind:
+                    continue
+                matches_day_to_remind.remove(m.id())
+                for player_id in db.predictions.getMissingPlayers(m.id()):
+                    keyboard = telebot.types.InlineKeyboardMarkup(1)
+                    keyboard.add(create_match_button(m))
+                    bot.send_message(
+                        player_id,
+                        REMIND_DAY_MSG,
+                        parse_mode='Markdown',
+                        reply_markup=keyboard
+                    )
+            logging.info('update finished')
+        except Exception:
+            logging.error(traceback.format_exc())
 
 
 class BotRunner(threading.Thread):
@@ -147,6 +165,11 @@ class BotRunner(threading.Thread):
             super(BotRunner.BotStopper, self).__init__(name='bot_stopper')
             self.runner = runner
             self.stopped_event = stopped_event
+
+        def run(self):
+            self.stopped_event.wait()
+            self.runner.stop_bot()
+            self.runner.join()
 
     def __init__(self, config, stopped_event, exception_event):
         super(BotRunner, self).__init__(name='bot_runner')
@@ -177,6 +200,7 @@ class BotRunner(threading.Thread):
 
     def register_player(self, player):
         assert(not self.is_registered(player))
+        logging.info(f'Register player {player}')
         return self.get_db().players.createPlayer(player.id, player.first_name, player.last_name)
 
     def get_player(self, player):

@@ -299,12 +299,16 @@ class Matches(object):
             self.matches[match.id()] = match
 
     def getMatchesAfter(self, time):
-        return sorted([m for m in self.matches.values() if m.start_time(
-        ) > time], key=lambda m: (m.start_time(), not m.is_finished(), m.id()))
+        return sorted(
+            [m for m in self.matches.values() if m.start_time() > time],
+            key=lambda m: (m.start_time(), not m.is_finished(), m.id())
+        )
 
     def getMatchesBefore(self, time):
-        return sorted([m for m in self.matches.values() if m.start_time(
-        ) <= time], key=lambda m: (m.start_time(), not m.is_finished(), m.id()))
+        return sorted(
+            [m for m in self.matches.values() if m.start_time() <= time],
+            key=lambda m: (m.start_time(), not m.is_finished(), m.id())
+        )
 
     def getMatch(self, match_id):
         return self.matches[match_id]
