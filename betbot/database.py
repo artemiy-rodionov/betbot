@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import pytz
 import re
 import sqlite3
@@ -133,11 +131,10 @@ class Teams(object):
                 match_teams[team_type] = self.teams[id]
             if match_info['finished'] and match_type != 'group':
                 assert(match_info['winner'] in {'home', 'away'})
-                w = match_teams[match_info['winner']]
-                l = match_teams['home' if match_info['winner']
-                                == 'away' else 'away']
-                self.teams[Teams.get_team_id('winner', match_info['name'])] = w
-                self.teams[Teams.get_team_id('loser', match_info['name'])] = l
+                win = match_teams[match_info['winner']]
+                lose = match_teams['home' if match_info['winner'] == 'away' else 'away']
+                self.teams[Teams.get_team_id('winner', match_info['name'])] = win
+                self.teams[Teams.get_team_id('loser', match_info['name'])] = lose
 
     def get_participants(self, match_info):
         return [self.teams[Teams.get_team_id(match_info['type'], match_info[t])]
@@ -419,16 +416,23 @@ class Predictions(object):
 
     def addPrediction(self, player, match, result, time):
         with self.db() as db:
-            res = db.execute('''SELECT result, time FROM predictions
-							  					 WHERE player_id=? and match_id=?''', (player.id(), match.id()))
+            res = db.execute(
+                'SELECT result, time FROM predictions WHERE player_id=? and match_id=?',
+                (player.id(), match.id())
+            )
             rows = [r for r in res]
             if len(rows) == 0:
-                db.execute('''INSERT INTO predictions
-											(player_id, match_id, result, time)
-											values(?, ?, ?, ?)''', (player.id(), match.id(), result, time))
+                db.execute(
+                    '''
+                    INSERT INTO predictions (player_id, match_id, result, time) values(?, ?, ?, ?)
+                    ''',
+                    (player.id(), match.id(), result, time)
+                )
             else:
-                db.execute('''UPDATE predictions SET result=?, time=?
-				   					  WHERE player_id=? AND match_id=?''', (result, time, player.id(), match.id()))
+                db.execute(
+                    'UPDATE predictions SET result=?, time=?  WHERE player_id=? AND match_id=?',
+                    (result, time, player.id(), match.id())
+                )
 
     def getForPlayer(self, player):
         predictions = []

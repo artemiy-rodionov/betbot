@@ -1,15 +1,17 @@
 #!/usr/bin/env python
 
 import sys
+import datetime
 import argparse
-import inspect
 import json
 import logging
+
+import pytz
 
 from betbot import bot
 
 logging.basicConfig(
-    format= '%(asctime)s (%(filename)s:%(lineno)d %(threadName)s) %(levelname)s: "%(message)s"'
+    format='%(asctime)s (%(filename)s:%(lineno)d %(threadName)s) %(levelname)s: "%(message)s"'
 )
 logging.getLogger().setLevel(logging.DEBUG)
 

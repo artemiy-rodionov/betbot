@@ -8,7 +8,6 @@ import inspect
 import json
 import logging
 import os
-import stat
 import pytz
 import re
 import telebot
@@ -47,7 +46,10 @@ RESULTS_TITLE = 'Ставки сделаны, ставок больше нет. 
 CHOOSE_MATCH_TITLE = 'Выбери матч'
 LEFT_ARROW = '\u2b05'
 RIGHT_ARROW = '\u27a1'
-NOT_REGISTERED = 'Ты пока не зарегистрирован(а). Напиши пользователю @sideshowb0b для получения доступа.'
+NOT_REGISTERED = (
+    'Ты пока не зарегистрирован(а). '
+    'Напиши пользователю @sideshowb0b для получения доступа.'
+)
 ALREADY_REGISTERED = '%s (%s) уже зарегистрирован(а).'
 REGISTER_SHOULD_BE_REPLY = 'Сообщение о регистрации должно быть ответом.'
 REGISTER_SHOULD_BE_REPLY_TO_FORWARD = 'Сообщение о регистрации должно быть ответом на форвард.'
@@ -135,7 +137,7 @@ def update_job(config, bot_runner, stopped_event):
                 reply_markup=keyboard
             )
         logging.info('update finished')
-    except:
+    except Exception:
         logging.error(traceback.format_exc())
 
 
@@ -145,11 +147,6 @@ class BotRunner(threading.Thread):
             super(BotRunner.BotStopper, self).__init__(name='bot_stopper')
             self.runner = runner
             self.stopped_event = stopped_event
-
-    def run(self):
-        self.stopped_event.wait()
-        self.runner.stop_bot()
-        self.runner.join()
 
     def __init__(self, config, stopped_event, exception_event):
         super(BotRunner, self).__init__(name='bot_runner')
@@ -172,7 +169,7 @@ class BotRunner(threading.Thread):
         BotRunner.BotStopper(self, self.stopped_event).start()
         try:
             self.run_bot()
-        except:
+        except BaseException:
             self.exception_event.set()
             raise
         finally:
@@ -209,15 +206,6 @@ class BotRunner(threading.Thread):
         for m, r in db.predictions.getForPlayer(player):
             predictions[m.id()] = r
         for m in matches:
-            start_time_str = m.start_time().astimezone(MSK_TZ).strftime('%d.%m %H:%M')
-            label = '%s: %s %s' % (
-                m.short_round(),
-                m.label(predictions[m.id()], short=True),
-                start_time_str
-            )
-            button = telebot.types.InlineKeyboardButton(
-                label, callback_data='b_%s' % m.id()
-            )
             keyboard.add(create_match_button(m, predictions[m.id()]))
         navs = []
         if pages_number > 1:
@@ -236,7 +224,7 @@ class BotRunner(threading.Thread):
             navs.append(
                 telebot.types.InlineKeyboardButton(
                     RIGHT_ARROW,
-                    callback_data='l_%d' % ((page + 1)  % pages_number)
+                    callback_data='l_%d' % ((page + 1) % pages_number)
                 )
             )
             keyboard.row(*navs)
@@ -247,8 +235,9 @@ class BotRunner(threading.Thread):
         bot = self.bot
         @bot.message_handler(func=lambda m: m.chat.type != 'private')
         def on_not_private(message):
-            bot.send_message(message.chat.id, SEND_PRIVATE_MSG,
-                            reply_to_message_id=message.message_id)
+            bot.send_message(
+                message.chat.id, SEND_PRIVATE_MSG, reply_to_message_id=message.message_id
+            )
 
         def check_forwarded_from(message):
             if message.reply_to_message is None:
@@ -259,18 +248,28 @@ class BotRunner(threading.Thread):
                 return None
             return message.reply_to_message.forward_from
 
-        @bot.message_handler(commands=['register_admin'], func=lambda m: self.is_admin(m.from_user))
+        @bot.message_handler(
+            commands=['register_admin'], func=lambda m: self.is_admin(m.from_user)
+        )
         def register_admin(message):
             user = message.from_user
             if self.is_registered(user):
                 player = self.get_player(user)
-                bot.send_message(message.chat.id, ALREADY_REGISTERED % (player.name(), player.id()))
+                bot.send_message(
+                    message.chat.id,
+                    ALREADY_REGISTERED % (player.name(), player.id())
+                )
                 return
             player = self.register_player(user)
-            bot.send_message(message.chat.id, REGISTRATION_SUCCESS % (player.name(), player.short_name(),
-                                                                    player.id()))
-            bot.send_message(player.id(), START_MSG % player.short_name() + HELP_MSG % self.results_url,
-                            parse_mode='Markdown')
+            bot.send_message(
+                message.chat.id,
+                REGISTRATION_SUCCESS % (player.name(), player.short_name(), player.id())
+            )
+            bot.send_message(
+                player.id(),
+                START_MSG % player.short_name() + HELP_MSG % self.results_url,
+                parse_mode='Markdown'
+            )
 
         @bot.message_handler(commands=['register'], func=lambda m: self.is_admin(m.from_user))
         def register(message):
@@ -280,13 +279,21 @@ class BotRunner(threading.Thread):
                 return
             if self.is_registered(forward_from):
                 player = self.get_player(forward_from)
-                bot.send_message(message.chat.id, ALREADY_REGISTERED % (player.name(), player.id()))
+                bot.send_message(
+                    message.chat.id,
+                    ALREADY_REGISTERED % (player.name(), player.id())
+                )
                 return
             player = self.register_player(message.reply_to_message.forward_from)
-            bot.send_message(message.chat.id, REGISTRATION_SUCCESS % (player.name(), player.short_name(),
-                                                                    player.id()))
-            bot.send_message(player.id(), START_MSG % player.short_name() + HELP_MSG % self.results_url,
-                            parse_mode='Markdown')
+            bot.send_message(
+                message.chat.id,
+                REGISTRATION_SUCCESS % (player.name(), player.short_name(), player.id())
+            )
+            bot.send_message(
+                player.id(),
+                START_MSG % player.short_name() + HELP_MSG % self.results_url,
+                parse_mode='Markdown'
+            )
 
         def change_queen(message, is_queen):
             forward_from = check_forwarded_from(message)
@@ -318,8 +325,7 @@ class BotRunner(threading.Thread):
                 bot.send_message(message.chat.id, NO_MATCHES_MSG)
                 return
             title, keyboard = page_to_send
-            bot.send_message(message.chat.id, title,
-                            reply_markup=keyboard)
+            bot.send_message(message.chat.id, title, reply_markup=keyboard)
 
         @bot.message_handler(commands=['mybets'])
         def list_my_bets(message):
@@ -350,19 +356,24 @@ class BotRunner(threading.Thread):
         def handle_query(query):
             db = self.get_db()
             if query.message is None:
-                bot.answer_callback_query(callback_query_id=query.id,
-                                        text=ERROR_MESSAGE_ABSENT,
-                                        show_alert=True)
+                bot.answer_callback_query(
+                    callback_query_id=query.id,
+                    text=ERROR_MESSAGE_ABSENT,
+                    show_alert=True
+                )
                 return
             bot.answer_callback_query(callback_query_id=query.id)
             player = self.get_player(query.from_user)
             data = query.data or ''
 
             def edit_message(text, **kwargs):
-                bot.edit_message_text(text, chat_id=query.message.chat.id,
-                                    message_id=query.message.message_id,
-                                    parse_mode='Markdown',
-                                    **kwargs)
+                bot.edit_message_text(
+                    text,
+                    chat_id=query.message.chat.id,
+                    message_id=query.message.message_id,
+                    parse_mode='Markdown',
+                    **kwargs
+                )
 
             def on_error(line_no):
                 edit_message(NAVIGATION_ERROR % (line_no, self.results_url))
@@ -399,7 +410,10 @@ class BotRunner(threading.Thread):
                     .row(make_button(4), make_button(5), make_button(6))\
                     .row(make_button(7), make_button(8), make_button(9))
                 team = match.team(0) if args_len == 1 else match.team(1)
-                return edit_message(SCORE_REQUEST % (team.flag(), team.name()), reply_markup=keyboard)
+                return edit_message(
+                    SCORE_REQUEST % (team.flag(), team.name()),
+                    reply_markup=keyboard
+                )
 
             if args_len == 4:
                 if not match.is_playoff():
@@ -422,13 +436,18 @@ class BotRunner(threading.Thread):
             if match.start_time() < now:
                 return edit_message(TOO_LATE_MSG % self.results_url)
 
-            logging.info('prediction player: %s match: %s result: %s time: %s' %
-                        (player.id(), match.id(), str(result), now))
+            logging.info(
+                'prediction player: %s match: %s result: %s time: %s' % (
+                    player.id(), match.id(), str(result), now
+                )
+            )
             db.predictions.addPrediction(player, match, result, now)
             start_time_str = match.start_time().astimezone(MSK_TZ).strftime('%d.%m в %H:%M')
             bet_time_str = now.astimezone(MSK_TZ).strftime('%d.%m в %H:%M:%S')
-            msg = CONFIRMATION_MSG % (match.label(result) , bet_time_str, start_time_str,
-                                    player.short_name(), self.results_url)
+            msg = CONFIRMATION_MSG % (
+                match.label(result),
+                bet_time_str, start_time_str, player.short_name(), self.results_url
+            )
             return edit_message(msg)
 
         bot.polling(none_stop=True, timeout=1)
@@ -459,7 +478,9 @@ def start(config):
     exception_event = threading.Event()
     runner = BotRunner(config, stopped_event, exception_event)
     runner.start()
-    threading.Thread(target=update_job, name='update', args=(config, runner, stopped_event)).start()
+    threading.Thread(
+        target=update_job, name='update', args=(config, runner, stopped_event)
+    ).start()
     try:
         while True:
             threads = [t for t in threading.enumerate() if t != threading.current_thread()]
