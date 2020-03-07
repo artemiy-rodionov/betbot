@@ -256,11 +256,6 @@ class BotRunner(threading.Thread):
 
     def run_bot(self):
         bot = self.bot
-        @bot.message_handler(func=lambda m: m.chat.type != 'private')
-        def on_not_private(message):
-            bot.send_message(
-                message.chat.id, SEND_PRIVATE_MSG, reply_to_message_id=message.message_id
-            )
 
         @bot.message_handler(commands=['scores'])
         def scores(message):
@@ -268,14 +263,20 @@ class BotRunner(threading.Thread):
             results = self.db.predictions.genResults(unow)
             text = f'Результаты: \n'
             text += '\n```\n'
-            for player in sorted(
+            for idx, player in enumerate(sorted(
                 results['players'].values(), key=lambda p: p['score'], reverse=True
-            ):
-                text += f'{player["name"]} - {player["score"]}\n'
+            )):
+                text += f'{idx+1}. {player["name"]} - {player["score"]}\n'
             text += '\n```\n'
             bot.send_message(
                 message.chat.id, text, reply_to_message_id=message.message_id,
                 parse_mode='Markdown',
+            )
+
+        @bot.message_handler(func=lambda m: m.chat.type != 'private')
+        def on_not_private(message):
+            bot.send_message(
+                message.chat.id, SEND_PRIVATE_MSG, reply_to_message_id=message.message_id
             )
 
         def check_forwarded_from(message):
