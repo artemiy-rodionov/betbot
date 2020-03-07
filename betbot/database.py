@@ -453,7 +453,7 @@ class Predictions(object):
         predictions = []
         with self.db() as db:
             for row in db.execute('''SELECT player_id, result FROM predictions
-                               WHERE match_id=?''', (match.id,)):
+                               WHERE match_id=?''', (match.id(),)):
                 res = row[1]
                 player = self.players.getPlayer(row[0])
                 predictions.append((player, res))

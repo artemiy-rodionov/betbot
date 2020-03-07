@@ -113,9 +113,16 @@ def update_job(config, bot_runner, stopped_event):
                 keyboard.add(telebot.types.InlineKeyboardButton(
                     CHECK_RESULTS_BUTTON, url=config['results_url']
                 ))
+                match_predictions = db.predictions.getForMatch(m)
+                text = RESULTS_TITLE % m.label()
+                text += '\n```\n'
+                for player, pred in match_predictions:
+                    pred_text = pred.label() if pred else None
+                    text += f'{player.name()}: {pred_text}\n'
+                text += '\n```\n'
                 bot.send_message(
                     config['group_id'],
-                    RESULTS_TITLE % m.label(),
+                    text,
                     parse_mode='Markdown',
                     reply_markup=keyboard
                 )
@@ -166,6 +173,7 @@ class BotRunner(threading.Thread):
         super(BotRunner, self).__init__(name='bot_runner')
         self.stopped_event = stopped_event
         self.exception_event = exception_event
+        self._config = config
         self.bot = create_bot(config)
         self.db_lock = threading.Lock()
         self.db = Database(config)
@@ -252,6 +260,20 @@ class BotRunner(threading.Thread):
         def on_not_private(message):
             bot.send_message(
                 message.chat.id, SEND_PRIVATE_MSG, reply_to_message_id=message.message_id
+            )
+
+        @bot.message_handler(commands=['scores'])
+        def scores(message):
+            unow = utcnow()
+            results = self.db.predictions.genResults(unow)
+            text = f'Результаты: \n'
+            text += '\n```\n'
+            for player in results['players'].values():
+                text += f'{player["name"]} - {player["score"]}'
+            text += '\n```\n'
+            bot.send_message(
+                message.chat.id, text, reply_to_message_id=message.message_id,
+                parse_mode='Markdown',
             )
 
         def check_forwarded_from(message):
