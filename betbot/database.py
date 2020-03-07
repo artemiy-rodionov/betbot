@@ -457,7 +457,7 @@ class Predictions(object):
                 res = row[1]
                 player = self.players.getPlayer(row[0])
                 predictions.append((player, res))
-        predictions.sort(key=lambda p: p[0].name)
+        predictions.sort(key=lambda p: p[0].name())
         return predictions
 
     def genResults(self, now):
