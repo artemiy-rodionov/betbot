@@ -268,8 +268,10 @@ class BotRunner(threading.Thread):
             results = self.db.predictions.genResults(unow)
             text = f'Результаты: \n'
             text += '\n```\n'
-            for player in results['players'].values():
-                text += f'{player["name"]} - {player["score"]}'
+            for player in sorted(
+                results['players'].values(), key=lambda p: p['score'], reverse=True
+            ):
+                text += f'{player["name"]} - {player["score"]}\n'
             text += '\n```\n'
             bot.send_message(
                 message.chat.id, text, reply_to_message_id=message.message_id,
