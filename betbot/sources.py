@@ -1,8 +1,11 @@
 import re
 from collections import defaultdict
 import json
+import logging
 
 import requests
+
+from . import conf
 
 
 def fifa_worldcup():
@@ -11,7 +14,8 @@ def fifa_worldcup():
     return resp.json()
 
 
-def api_football(config, league_id):
+def api_football(config):
+    league_id = config['league_id']
     headers = {
         'X-RapidAPI-Key': config['api_token'],
         'X-RapidAPI-Host': 'api-football-v1.p.rapidapi.com'
@@ -23,7 +27,7 @@ def api_football(config, league_id):
 
 
 def rfpl_2019(config):
-    return api_football(config, 511)
+    return api_football(config)
 
 
 def convert_api_season(data):
@@ -63,12 +67,15 @@ def convert_api_season(data):
 
 
 def load_fixtures(config):
-    with open(config['data_file']) as fp:
+    data_fpath = conf.get_data_file(config)
+    with open(data_fpath) as fp:
         season_data = json.load(fp)
     return convert_api_season(season_data)
 
 
 def save_rfpl_fixtures(config):
     data = rfpl_2019(config)
-    with open(config['data_file'], 'w') as fp:
+    data_fpath = conf.get_data_file(config)
+    logging.info(f'Saving fixtures to {data_fpath}')
+    with open(data_fpath, 'w') as fp:
         json.dump(data, fp)

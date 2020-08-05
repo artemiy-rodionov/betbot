@@ -7,6 +7,7 @@ import dateutil.parser
 
 from .sqlite_context import dbopen
 from . import sources
+from . import conf
 
 BLANK_FLAG = '\U0001F3F3\uFE0F'
 ZWNBSP = '\uFEFF'
@@ -32,10 +33,11 @@ def sorted_matches(matches_info):
 class Database(object):
     def __init__(self, config):
         matches_data = sources.load_fixtures(config)
+        self._db_path = conf.get_db_file(config)
         self.teams = Teams(matches_data)
         self.matches = Matches(matches_data, self.teams)
-        self.players = Players(config['base_file'], config['admin_id'])
-        self.predictions = Predictions(config['base_file'], self.players, self.matches)
+        self.players = Players(self._db_path, config['admin_id'])
+        self.predictions = Predictions(self._db_path, self.players, self.matches)
 
 
 class Team(object):
@@ -498,8 +500,13 @@ class Predictions(object):
         for player in players:
             score = sum(0 if s['score'] is None else s['score']
                         for s in results['players'][player.id()]['predictions'])
+            exact_score = sum(
+                1 if s['score'] and s['score'] == 3 else 0
+                for s in results['players'][player.id()]['predictions']
+            )
             results['players'][player.id()]['name'] = player.name()
             results['players'][player.id()]['score'] = score
+            results['players'][player.id()]['exact_score'] = exact_score
             results['players'][player.id()]['is_queen'] = player.is_queen()
         return results
 

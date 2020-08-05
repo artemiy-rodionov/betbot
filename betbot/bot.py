@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 from .database import Database, Result
-from . import sources
+from . import sources, conf
 
 telebot.logger.setLevel(logging.INFO)
 
@@ -100,7 +100,8 @@ def update_job(config, bot_runner, stopped_event):
             db = Database(config)
             bot_runner.replace_db(db)
             results = db.predictions.genResults(utcnow())
-            with open(config['results_file'], 'w') as fp:
+            results_fpath = conf.get_results_file(config)
+            with open(results_fpath, 'w') as fp:
                 json.dump(results, fp)
                 logging.info(f'Results file dumped')
             last_update = utcnow()
@@ -264,7 +265,8 @@ class BotRunner(threading.Thread):
             text = f'Результаты: \n'
             text += '\n```\n'
             for idx, player in enumerate(sorted(
-                results['players'].values(), key=lambda p: p['score'], reverse=True
+                results['players'].values(), key=lambda p: (p['score'], p['exact_score']),
+                reverse=True
             )):
                 text += f'{idx+1}. {player["name"]} - {player["score"]}\n'
             text += '\n```\n'
