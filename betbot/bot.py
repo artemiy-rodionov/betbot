@@ -81,11 +81,43 @@ def create_match_button(match, prediction=None):
     return telebot.types.InlineKeyboardButton(label, callback_data='b_{}'.format(match.id()))
 
 
+def send_scores(bot, db, config, reply_message=None, extra_msg=None):
+    unow = utcnow()
+    results = db.predictions.genResults(unow)
+    if extra_msg is None:
+        extra_msg = ''
+    else:
+        extra_msg = f'{extra_msg}\n'
+    text = f'{extra_msg}Таблица: \n'
+    text += '\n```\n'
+    for idx, player in enumerate(sorted(
+        results['players'].values(), key=lambda p: (p['score'], p['exact_score']),
+        reverse=True
+    )):
+        text += f'{idx+1}. {player["name"]} - {player["score"]}\n'
+    text += '\n```\n'
+    group_id = config['group_id']
+    if reply_message is not None:
+        group_id = reply_message.chat.id
+    keyboard = telebot.types.InlineKeyboardMarkup(1)
+    keyboard.add(telebot.types.InlineKeyboardButton(
+        CHECK_RESULTS_BUTTON, url=config['results_url']
+    ))
+    bot.send_message(
+        group_id,
+        text,
+        reply_to_message_id=reply_message.message_id if reply_message else None,
+        parse_mode='Markdown',
+        reply_markup=keyboard,
+    )
+
+
 def update_job(config, bot_runner, stopped_event):
     last_update = utcnow() - UPDATE_INTERVAL
     logging.info('starting update loop')
     db = Database(config)
     matches_to_notify = {m.id() for m in db.matches.getMatchesAfter(utcnow())}
+    matches_in_progress = set()
     matches_to_remind = {
         m.id() for m in db.matches.getMatchesAfter(utcnow() + REMIND_BEFORE)
     }
@@ -107,9 +139,12 @@ def update_job(config, bot_runner, stopped_event):
             last_update = utcnow()
             bot = create_bot(config)
             for m in db.matches.getMatchesBefore(last_update):
-                if m.id() not in matches_to_notify:
+                mid = m.id()
+                if mid not in matches_to_notify:
                     continue
-                matches_to_notify.remove(m.id())
+                matches_to_notify.remove(mid)
+                matches_in_progress.add(mid)
+                logging.info(f'Add match {mid} in progress')
                 keyboard = telebot.types.InlineKeyboardMarkup(1)
                 keyboard.add(telebot.types.InlineKeyboardButton(
                     CHECK_RESULTS_BUTTON, url=config['results_url']
@@ -153,6 +188,17 @@ def update_job(config, bot_runner, stopped_event):
                         parse_mode='Markdown',
                         reply_markup=keyboard
                     )
+            finished_matches = []
+            for mid in matches_in_progress:
+                m = db.matches.getMatch(mid)
+                if m.is_finished():
+                    finished_matches.append(m)
+            matches_in_progress -= {m.id() for m in finished_matches}
+            if finished_matches:
+                extra_msg = 'Результаты матчей:\n'
+                for m in finished_matches:
+                    extra_msg += f'{m.label(m.result(), True)}\n'
+                send_scores(bot, db, config, extra_msg=extra_msg)
             logging.info('update finished')
         except Exception:
             logging.error(traceback.format_exc())
@@ -260,20 +306,7 @@ class BotRunner(threading.Thread):
 
         @bot.message_handler(commands=['scores'])
         def scores(message):
-            unow = utcnow()
-            results = self.db.predictions.genResults(unow)
-            text = f'Результаты: \n'
-            text += '\n```\n'
-            for idx, player in enumerate(sorted(
-                results['players'].values(), key=lambda p: (p['score'], p['exact_score']),
-                reverse=True
-            )):
-                text += f'{idx+1}. {player["name"]} - {player["score"]}\n'
-            text += '\n```\n'
-            bot.send_message(
-                message.chat.id, text, reply_to_message_id=message.message_id,
-                parse_mode='Markdown',
-            )
+            send_scores(bot, self.db, self._config, reply_message=message)
 
         @bot.message_handler(func=lambda m: m.chat.type != 'private')
         def on_not_private(message):
