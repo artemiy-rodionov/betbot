@@ -23,7 +23,16 @@ def api_football(config):
     url = f'https://api-football-v1.p.rapidapi.com/v2/fixtures/league/{league_id}'
     resp = requests.get(url, headers=headers)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    results = data['api']['results']
+    if not results:
+        try:
+            error = data['api']['error']
+        except KeyError:
+            error = 'RapidAPI error'
+        logging.error(f'RapidAPI error: {data}')
+        raise ValueError(error)
+    return data
 
 
 def rfpl_2019(config):
