@@ -147,7 +147,7 @@ def update_job(config, bot_runner, stopped_event):
             results_fpath = conf.get_results_file(config)
             with open(results_fpath, 'w') as fp:
                 json.dump(results, fp)
-                logging.info(f'Results file dumped')
+                logging.info('Results file dumped')
             last_update = utcnow()
             bot = create_bot(config)
             for m in db.matches.getMatchesBefore(last_update):
