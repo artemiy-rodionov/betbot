@@ -81,20 +81,32 @@ def create_match_button(match, prediction=None):
     return telebot.types.InlineKeyboardButton(label, callback_data='b_{}'.format(match.id()))
 
 
-def send_scores(bot, db, config, reply_message=None, extra_msg=None):
+def send_scores(bot, db, config, reply_message=None, finished_matches=None):
+    extra_msg = ''
+    finished_matches_ids = set()
+    if finished_matches is not None:
+        extra_msg = 'Результаты матчей:'
+        for m in finished_matches:
+            extra_msg += f'{m.label(m.result(), True)}\n'
+            finished_matches_ids.add(int(m.id()))
     unow = utcnow()
     results = db.predictions.genResults(unow)
-    if extra_msg is None:
-        extra_msg = ''
-    else:
-        extra_msg = f'{extra_msg}\n'
-    text = f'{extra_msg}Таблица: \n'
+    text = f'{extra_msg}\n\nТаблица: \n'
     text += '\n```\n'
     for idx, player in enumerate(sorted(
-        results['players'].values(), key=lambda p: (p['score'], p['exact_score']),
+        results['players'].values(),
+        key=lambda p: (p['score'], p['exact_score']),
         reverse=True
     )):
-        text += f'{idx+1}. {player["name"]} - {player["score"]}\n'
+        text += f'{idx+1}. {player["name"]} - {player["score"]}'
+        if finished_matches:
+            matches_score = sum(
+                0 if pr['score'] is None else pr['score']
+                for pr in player['predictions']
+                if int(pr['match_id']) in finished_matches_ids
+            )
+            text += f' (+{matches_score})'
+        text += '\n'
     text += '\n```\n'
     group_id = config['group_id']
     if reply_message is not None:
@@ -195,10 +207,7 @@ def update_job(config, bot_runner, stopped_event):
                     finished_matches.append(m)
             matches_in_progress -= {m.id() for m in finished_matches}
             if finished_matches:
-                extra_msg = 'Результаты матчей:\n'
-                for m in finished_matches:
-                    extra_msg += f'{m.label(m.result(), True)}\n'
-                send_scores(bot, db, config, extra_msg=extra_msg)
+                send_scores(bot, db, config, finished_matches=finished_matches)
             logging.info('update finished')
         except Exception:
             logging.error(traceback.format_exc())
@@ -310,9 +319,10 @@ class BotRunner(threading.Thread):
 
         @bot.message_handler(func=lambda m: m.chat.type != 'private')
         def on_not_private(message):
-            bot.send_message(
-                message.chat.id, SEND_PRIVATE_MSG, reply_to_message_id=message.message_id
-            )
+            pass
+            # bot.send_message(
+            #     message.chat.id, SEND_PRIVATE_MSG, reply_to_message_id=message.message_id
+            # )
 
         def check_forwarded_from(message):
             if message.reply_to_message is None:
@@ -348,7 +358,6 @@ class BotRunner(threading.Thread):
 
         @bot.message_handler(commands=['register'], func=lambda m: self.is_admin(m.from_user))
         def register(message):
-            # player = self.register_player(message.from_user)
             forward_from = check_forwarded_from(message)
             if forward_from is None:
                 return

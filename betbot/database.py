@@ -492,8 +492,11 @@ class Predictions(object):
                 'short_label': match.label(None, short=True)
             })
             for player in players:
-                p = predictions[int(player.id())][int(match.id())]
-                results['players'][player.id()]['predictions'].append({
+                player_id = int(player.id())
+                match_id = int(match.id())
+                p = predictions[player_id][match_id]
+                results['players'][player_id]['predictions'].append({
+                    'match_id': match_id,
                     'result': None if p is None else p.label(),
                     'score': None if not match.is_finished() else match.result().score(p)
                 })
