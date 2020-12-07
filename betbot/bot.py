@@ -85,13 +85,13 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None):
     extra_msg = ''
     finished_matches_ids = set()
     if finished_matches is not None:
-        extra_msg = 'Результаты матчей:'
+        extra_msg = 'Результаты матчей:\n'
         for m in finished_matches:
             extra_msg += f'{m.label(m.result(), True)}\n'
             finished_matches_ids.add(int(m.id()))
     unow = utcnow()
     results = db.predictions.genResults(unow)
-    text = f'{extra_msg}\n\nТаблица: \n'
+    text = f'{extra_msg}\nТаблица: \n'
     text += '\n```\n'
     for idx, player in enumerate(sorted(
         results['players'].values(),
