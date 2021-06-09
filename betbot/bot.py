@@ -27,13 +27,12 @@ UPDATE_INTERVAL = timedelta(seconds=60)
 REMIND_BEFORE = timedelta(minutes=30)
 REMIND_DAY_BEFORE = timedelta(hours=24)
 
-BOT_USERNAME = '@clamps_bot'
 RESULTS_TABLE = 'Таблица результатов [доступна по ссылке](%s).'
 PRESS_BET = 'Жми /bet, чтобы сделать новую ставку или изменить существующую.'
 MY_BETS = '/mybets, чтобы посмотреть свои ставки.'
 HELP_MSG = PRESS_BET + ' ' + MY_BETS + ' ' + RESULTS_TABLE
 START_MSG = 'Привет, %s! Поздравляю, ты в игре!\n'
-SEND_PRIVATE_MSG = 'Tcccc, не пали контору. Напиши мне личное сообщение (%s).' % BOT_USERNAME
+SEND_PRIVATE_MSG = 'Tcccc, не пали контору. Напиши мне личное сообщение'
 NAVIGATION_ERROR = 'Сорян, что-то пошло не так в строке %d. Попробуй еще раз.\n' + HELP_MSG
 NO_MATCHES_MSG = 'Уже не на что ставить =('
 SCORE_REQUEST = 'Сколько голов забьет %s%s?'
@@ -319,8 +318,10 @@ class BotRunner(threading.Thread):
 
         @bot.message_handler(commands=['bet'], func=lambda m: m.chat.type != 'private')
         def bet_cmd_public_err(message):
+            cfg = self._config
+            msg = f'{SEND_PRIVATE_MSG} {cfg["bot_name"]}'
             bot.send_message(
-                message.chat.id, SEND_PRIVATE_MSG, reply_to_message_id=message.message_id
+                message.chat.id, msg, reply_to_message_id=message.message_id
             )
 
         @bot.message_handler(func=lambda m: m.chat.type != 'private')

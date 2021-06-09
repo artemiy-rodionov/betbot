@@ -1,10 +1,13 @@
 {
  "data_dir": "instance",
  "log_file": "instance/betting.log",
+ "uefa_2020_file": "data/uefa-2020.json",
  "token": "",
+ "bot_name": <bot-name>,
  "admin_id": <bot-admin-id-int>,
  "group_id": <telegram-group-id-int>,
  "results_url": "<RESULTS URL>",
  "api_token": "<api-football-token>",
- "league_id": <api-football-league-id>
+ "league_id": <api-football-league-id>,
+ "season": <api-footbal-season>
 }
