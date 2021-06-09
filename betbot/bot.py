@@ -317,6 +317,12 @@ class BotRunner(threading.Thread):
         def scores(message):
             send_scores(bot, self.db, self._config, reply_message=message)
 
+        @bot.message_handler(commands=['bet'], func=lambda m: m.chat.type != 'private')
+        def bet_cmd_public_err(message):
+            bot.send_message(
+                message.chat.id, SEND_PRIVATE_MSG, reply_to_message_id=message.message_id
+            )
+
         @bot.message_handler(func=lambda m: m.chat.type != 'private')
         def on_not_private(message):
             pass
@@ -542,7 +548,7 @@ class BotRunner(threading.Thread):
 
 def update_fixtures(config):
     logging.info('Updating fixtures')
-    sources.save_rfpl_fixtures(config)
+    sources.save_fixtures(config)
 
 
 def dump_info(config):

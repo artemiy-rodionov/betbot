@@ -32,7 +32,7 @@ var redraw_table = (function() {
     for (var id in players) {
       var p = players[id];
       var tr = $('<tr>');
-      tr.append('<th>' + p['name'] + (p['is_queen'] ? ' ♕' : '') + '</th>');
+      tr.append('<th>' + p['name'] + (p['is_queen'] ? ' \uD83D\uDC51' : '') + '</th>');
       tr.append('<th class="score"> ' + p['score'] + ' </th>');
       var predictions = p['predictions'];
       for (var i = 0; i < predictions.length; ++i) {

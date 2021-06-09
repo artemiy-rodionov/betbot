@@ -7,9 +7,16 @@ def get_data_file(config):
     return os.path.join(data_dir, f'fixtures-{lid}.json')
 
 
+def _make_group_name(config):
+    return f'{config["league_id"]}-{config["group_id"]}'
+
+
 def get_db_file(config):
-    return os.path.join(config['data_dir'], f'base-{config["league_id"]}.sqlite')
+    return os.path.join(
+        config['data_dir'],
+        f'base-{_make_group_name(config)}.sqlite'
+    )
 
 
 def get_results_file(config):
-    return os.path.join(config['data_dir'], f'results-{config["league_id"]}.json')
+    return os.path.join(config['data_dir'], f'results-{_make_group_name(config)}.json')

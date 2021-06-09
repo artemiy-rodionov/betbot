@@ -111,16 +111,16 @@ class Teams(object):
         if 'groups' not in matches_data:
             return
 
-        for group, group_info in matches_data['groups'].items():
-            w, r = group_info['winner'], group_info['runnerup']
-            if w is not None:
-                assert(w in self.teams)
-                self.teams[Teams.get_team_id(
-                    'qualified', 'winner_%s' % group)] = self.teams[w]
-            if r is not None:
-                assert(r in self.teams)
-                self.teams[Teams.get_team_id(
-                    'qualified', 'runner_%s' % group)] = self.teams[r]
+        # for group, group_info in matches_data['groups'].items():
+        #     w, r = group_info['winner'], group_info['runnerup']
+        #     if w is not None:
+        #         assert(w in self.teams)
+        #         self.teams[Teams.get_team_id(
+        #             'qualified', 'winner_%s' % group)] = self.teams[w]
+        #     if r is not None:
+        #         assert(r in self.teams)
+        #         self.teams[Teams.get_team_id(
+        #             'qualified', 'runner_%s' % group)] = self.teams[r]
 
         for _, match_info in sorted_matches(matches_data):
             match_type = match_info['type']
