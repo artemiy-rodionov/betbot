@@ -19,7 +19,7 @@ from collections import defaultdict
 from .database import Database, Result
 from . import sources, conf
 
-telebot.logger.setLevel(logging.INFO)
+telebot.logger.setLevel(logging.DEBUG)
 
 MATCHES_PER_PAGE = 8
 MSK_TZ = pytz.timezone('Europe/Moscow')
@@ -46,7 +46,7 @@ LEFT_ARROW = '\u2b05'
 RIGHT_ARROW = '\u27a1'
 NOT_REGISTERED = (
     'Ты пока не зарегистрирован(а). '
-    'Напиши пользователю @sideshowb0b для получения доступа.'
+    'Напиши пользователю {admin_name} для получения доступа.'
 )
 ALREADY_REGISTERED = '%s (%s) уже зарегистрирован(а).'
 REGISTER_SHOULD_BE_REPLY = 'Сообщение о регистрации должно быть ответом.'
@@ -97,7 +97,8 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None):
         key=lambda p: (p['score'], p['exact_score']),
         reverse=True
     )):
-        text += f'{idx+1}. {player["name"]} - {player["score"]}'
+        is_queen = ' ♛ ' if player['is_queen'] else ' '
+        text += f'{idx+1}. {player["name"]}{is_queen}- {player["score"]}'
         if finished_matches:
             matches_score = sum(
                 0 if pr['score'] is None else pr['score']
@@ -406,7 +407,8 @@ class BotRunner(threading.Thread):
 
         @bot.message_handler(func=lambda m: not self.is_registered(m.from_user))
         def on_not_registered(message):
-            bot.send_message(message.chat.id, NOT_REGISTERED)
+            msg = NOT_REGISTERED.format(admin_name=self._config['admin_name'])
+            bot.send_message(message.chat.id, msg)
 
         @bot.message_handler(commands=['bet'])
         def start_betting(message):

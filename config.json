@@ -5,6 +5,7 @@
  "token": "",
  "bot_name": <bot-name>,
  "admin_id": <bot-admin-id-int>,
+ "admin_name": <admin-username>,
  "group_id": <telegram-group-id-int>,
  "results_url": "<RESULTS URL>",
  "api_token": "<api-football-token>",
