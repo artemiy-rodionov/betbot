@@ -1,4 +1,5 @@
 import pytz
+from datetime import datetime
 import re
 import sqlite3
 from collections import defaultdict
@@ -15,6 +16,10 @@ CUP = '\U0001F3C6'
 BRONZE_MEDAL = '\U0001F949'
 
 MSK_TZ = pytz.timezone('Europe/Moscow')
+
+
+def utcnow():
+    return pytz.utc.localize(datetime.utcnow())
 
 
 def iter_matches(matches_info):
@@ -459,7 +464,11 @@ class Predictions(object):
                 res = row[1]
                 player = self.players.getPlayer(row[0])
                 predictions.append((player, res))
-        predictions.sort(key=lambda p: p[0].name())
+        players_id_order = list(self.genResults(utcnow())['players'].keys())
+        # sort by current players order
+        predictions.sort(key=lambda p: (
+            players_id_order.index(p[0].id()) if p[0].id() in players_id_order else 100
+        ))
         return predictions
 
     def genResults(self, now):
@@ -511,6 +520,11 @@ class Predictions(object):
             results['players'][player.id()]['score'] = score
             results['players'][player.id()]['exact_score'] = exact_score
             results['players'][player.id()]['is_queen'] = player.is_queen()
+        results['players'] = dict(sorted(
+            results['players'].items(),
+            key=lambda x: (x[1]['score'], x[1]['exact_score']),
+            reverse=True
+        ))
         return results
 
     def getMissingPlayers(self, match_id):

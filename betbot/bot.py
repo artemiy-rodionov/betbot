@@ -92,11 +92,7 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None):
     results = db.predictions.genResults(unow)
     text = f'{extra_msg}\nТаблица: \n'
     text += '\n```\n'
-    for idx, player in enumerate(sorted(
-        results['players'].values(),
-        key=lambda p: (p['score'], p['exact_score']),
-        reverse=True
-    )):
+    for idx, player in enumerate(results['players'].values()):
         is_queen = ' ♛ ' if player['is_queen'] else ' '
         text += f'{idx+1}. {player["name"]}{is_queen}- {player["score"]}'
         if finished_matches:
@@ -166,7 +162,8 @@ def update_job(config, bot_runner, stopped_event):
                 text += '\n```\n'
                 for player, pred in match_predictions:
                     pred_text = pred.label() if pred else None
-                    text += f'{player.name()}: {pred_text}\n'
+                    is_queen = ' ♛ ' if player.is_queen() else ' '
+                    text += f'{player.name()}{is_queen}: {pred_text}\n'
                 text += '\n```\n'
                 bot.send_message(
                     config['group_id'],
