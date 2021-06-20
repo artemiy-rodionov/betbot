@@ -9,6 +9,7 @@ import json
 import logging
 import pytz
 import re
+import math
 import telebot
 import threading
 import time
@@ -272,7 +273,7 @@ class BotRunner(threading.Thread):
         if matches_number == 0:
             return None
 
-        pages_number = round((matches_number - 1) / MATCHES_PER_PAGE)
+        pages_number = math.ceil((matches_number - 1) / MATCHES_PER_PAGE)
         page = min(page, pages_number - 1)
         first_match_ix = page * MATCHES_PER_PAGE
         last_match_ix = (page + 1) * MATCHES_PER_PAGE
