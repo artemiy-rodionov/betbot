@@ -126,7 +126,11 @@ def update_job(config, bot_runner, stopped_event):
     logging.info('starting update loop')
     db = Database(config)
     matches_to_notify = {m.id() for m in db.matches.getMatchesAfter(utcnow())}
-    matches_in_progress = set()
+    matches_in_progress = {
+        m.id() for m in db.matches.getMatchesBefore(utcnow())
+        if not m.is_finished()
+    }
+    logging.info(f'Found matches in progress: {matches_in_progress}')
     matches_to_remind = {
         m.id() for m in db.matches.getMatchesAfter(utcnow() + REMIND_BEFORE)
     }
