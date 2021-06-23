@@ -62,8 +62,8 @@ class Team(object):
             name = '%s %s' % (type.upper(), group.upper())
             short_name = '%s%s' % (type[0].upper(), group.upper())
         elif match_type in ['winner', 'loser']:
-            name = '%s %d' % (match_type.upper(), label)
-            short_name = '%s%d' % (match_type[0].upper(), label)
+            name = '%s %s' % (match_type.upper(), label)
+            short_name = '%s%s' % (match_type[0].upper(), label)
         return Team(id, name, short_name, BLANK_FLAG)
 
     def __init__(self, id, name, short_name, flag):
@@ -103,18 +103,16 @@ class Team(object):
 class Teams(object):
     @staticmethod
     def get_team_id(match_type, team_label):
-        if match_type == 'group':
-            return team_label
-        return '%s_%s' % (match_type, team_label)
+        return team_label
+        # if match_type == 'group':
+        #     return team_label
+        # return '%s_%s' % (match_type, team_label)
 
     def __init__(self, matches_data):
         self.teams = dict()
         for team_info in matches_data['teams']:
             team = Team.make_real(team_info)
             self.teams[team.id()] = team
-
-        if 'groups' not in matches_data:
-            return
 
         # for group, group_info in matches_data['groups'].items():
         #     w, r = group_info['winner'], group_info['runnerup']
@@ -129,14 +127,16 @@ class Teams(object):
 
         for _, match_info in sorted_matches(matches_data):
             match_type = match_info['type']
+            if match_type != 'winner':
+                continue
             match_teams = {}
             for team_type in ['home', 'away']:
-                team_label = match_info['%s_team' % team_type]
-                id = Teams.get_team_id(match_type, team_label)
-                if id not in self.teams:
-                    self.teams[id] = Team.make_fake(id, match_type, str(team_label))
-                match_teams[team_type] = self.teams[id]
-            if match_info['finished'] and match_type != 'group':
+                team_id = match_info['%s_team' % team_type]
+                # id = Teams.get_team_id(match_type, team_label)
+                # if id not in self.teams:
+                #     self.teams[id] = Team.make_fake(id, match_type, str(team_label))
+                match_teams[team_type] = self.teams[team_id]
+            if match_info['finished']:
                 assert(match_info['winner'] in {'home', 'away'})
                 win = match_teams[match_info['winner']]
                 lose = match_teams['home' if match_info['winner'] == 'away' else 'away']
@@ -149,9 +149,8 @@ class Teams(object):
 
     def __str__(self):
         return '\n'.join(
-            str(v) for v in sorted(
-                self.teams.values(),
-                key=Team.id))
+            str(v) for v in sorted(self.teams.values(), key=Team.id)
+        )
 
     def get_team(self, team_id):
         return self.teams[team_id]
@@ -162,8 +161,9 @@ class Result(object):
         self.goals1 = goals1
         self.goals2 = goals2
         if winner is None:
-            self.winner = 0 if goals1 == goals2 else (
-                1 if goals1 > goals2 else 2)
+            self.winner = (
+                0 if goals1 == goals2 else (1 if goals1 > goals2 else 2)
+            )
         else:
             self.winner = winner
         assert((self.goals1 <= self.goals2 or self.winner == 1) and
@@ -237,7 +237,12 @@ class Match(object):
             return None
         if 'winner' not in match_info or match_info['winner'] is None:
             return Result(h, a)
-        return Result(h, a, {'home': 1, 'away': 2}[match_info['winner']])
+        return Result(
+            h, a,
+            {
+                'home': 1,
+                'away': 2,
+            }[match_info['winner']])
 
     def __init__(self, round, match_info, teams):
         self._id = match_info['name']

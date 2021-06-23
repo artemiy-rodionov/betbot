@@ -103,12 +103,15 @@ def convert_api_v3_cup(config, data):
     except Exception:
         teams_info = {}
     for fix in fixtures:
+        winner_team = None
         for key in ('home', 'away'):
             team = fix['teams'][key]
             tid = team['id']
             name = team['name']
             info = teams_info.get(name)
             code = info['code'] if info else name
+            if team['winner']:
+                winner_team = key
             teams[tid] = {
                 'id': tid,
                 'name': name,
@@ -117,8 +120,6 @@ def convert_api_v3_cup(config, data):
                 'emojiString': info['flag'] if info else None,
             }
         fix_round = fix['league']['round']
-        if 'Group' not in fix_round:
-            continue
         match = {
             'date': fix['fixture']['date'],
             'name': fix['fixture']['id'],
@@ -127,17 +128,34 @@ def convert_api_v3_cup(config, data):
             'home_team': fix['teams']['home']['id'],
             'away_team': fix['teams']['away']['id'],
             'finished': fix['fixture']['status']['short'] == 'FT',
-            'type': 'group',
             'round': fix_round,
         }
-        group_matches[fix_round].append(match)
+        if 'Group' in fix_round:
+            match['type'] = 'group'
+            group_matches[fix_round].append(match)
+        if fix_round in (
+            '8th Finals',
+            'Quarter-finals',
+            'Semi-finals',
+            'Final'
+        ):
+            match['home_penalty'] = fix['score']['penalty']['home']
+            match['away_penalty'] = fix['score']['penalty']['away']
+            match['winner'] = winner_team
+            match['type'] = 'winner'
+            knockout_matches[fix_round].append(match)
+        else:
+            continue
     converted = {}
     converted['teams'] = teams.values()
     converted['groups'] = {
         rnd: {'name': rnd, 'matches': matches}
         for rnd, matches in group_matches.items()
     }
-    converted['knockout'] = knockout_matches
+    converted['knockout'] = {
+        rnd: {'name': rnd, 'matches': matches}
+        for rnd, matches in knockout_matches.items()
+    }
     return converted
 
 
