@@ -127,7 +127,7 @@ def convert_api_v3_cup(config, data):
             'away_result': fix['goals']['away'],
             'home_team': fix['teams']['home']['id'],
             'away_team': fix['teams']['away']['id'],
-            'finished': fix['fixture']['status']['short'] == 'FT',
+            'finished': fix['fixture']['status']['short'] in ('FT', 'AET', 'PEN'),
             'round': fix_round,
         }
         if 'Group' in fix_round:
