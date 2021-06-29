@@ -407,6 +407,15 @@ class BotRunner(threading.Thread):
         def unmake_queen(message):
             change_queen(message, False)
 
+        @bot.message_handler(
+            commands=['update_fixtures'], func=lambda m: self.is_admin(m.from_user)
+        )
+        def cmd_update_fixtures(message):
+            update_fixtures(self._config)
+            db = Database(self._config)
+            msg = str(db.matches)
+            bot.send_message(message.chat.id, msg)
+
         @bot.message_handler(func=lambda m: not self.is_registered(m.from_user))
         def on_not_registered(message):
             msg = NOT_REGISTERED.format(admin_name=self._config['admin_name'])
