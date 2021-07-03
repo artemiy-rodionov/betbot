@@ -121,6 +121,27 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None):
     )
 
 
+def send_match_predictions(bot, db, config, match):
+    keyboard = telebot.types.InlineKeyboardMarkup(1)
+    keyboard.add(telebot.types.InlineKeyboardButton(
+        CHECK_RESULTS_BUTTON, url=config['results_url']
+    ))
+    match_predictions = db.predictions.getForMatch(match)
+    text = RESULTS_TITLE % match.label()
+    text += '\n```\n'
+    for player, pred in match_predictions:
+        pred_text = pred.label() if pred else None
+        is_queen = ' ♛ ' if player.is_queen() else ' '
+        text += f'{player.name()}{is_queen}: {pred_text}\n'
+    text += '\n```\n'
+    bot.send_message(
+        config['group_id'],
+        text,
+        parse_mode='Markdown',
+        reply_markup=keyboard
+    )
+
+
 def update_job(config, bot_runner, stopped_event):
     last_update = utcnow() - UPDATE_INTERVAL
     logging.info('starting update loop')
@@ -158,24 +179,8 @@ def update_job(config, bot_runner, stopped_event):
                 matches_to_notify.remove(mid)
                 matches_in_progress.add(mid)
                 logging.info(f'Add match {mid} in progress')
-                keyboard = telebot.types.InlineKeyboardMarkup(1)
-                keyboard.add(telebot.types.InlineKeyboardButton(
-                    CHECK_RESULTS_BUTTON, url=config['results_url']
-                ))
-                match_predictions = db.predictions.getForMatch(m)
-                text = RESULTS_TITLE % m.label()
-                text += '\n```\n'
-                for player, pred in match_predictions:
-                    pred_text = pred.label() if pred else None
-                    is_queen = ' ♛ ' if player.is_queen() else ' '
-                    text += f'{player.name()}{is_queen}: {pred_text}\n'
-                text += '\n```\n'
-                bot.send_message(
-                    config['group_id'],
-                    text,
-                    parse_mode='Markdown',
-                    reply_markup=keyboard
-                )
+                send_match_predictions(bot, db, config, m)
+
             for m in db.matches.getMatchesBefore(last_update + REMIND_BEFORE):
                 if m.id() not in matches_to_remind:
                     continue
@@ -318,6 +323,13 @@ class BotRunner(threading.Thread):
         @bot.message_handler(commands=['scores'])
         def scores(message):
             send_scores(bot, self.db, self._config, reply_message=message)
+
+        @bot.message_handler(commands=['send_last'], func=lambda m: self.is_admin(m.from_user))
+        def send_last(message):
+            for m in self.db.matches.getMatchesBefore(utcnow()):
+                if m.is_finished():
+                    continue
+                send_match_predictions(bot, self.db, self._config, m)
 
         @bot.message_handler(commands=['bet'], func=lambda m: m.chat.type != 'private')
         def bet_cmd_public_err(message):
