@@ -282,10 +282,14 @@ class BotRunner(threading.Thread):
         if matches_number == 0:
             return None
 
-        pages_number = math.ceil((matches_number - 1) / MATCHES_PER_PAGE)
+        pages_number = max(1, math.ceil((matches_number - 1) / MATCHES_PER_PAGE))
         page = min(page, pages_number - 1)
         first_match_ix = page * MATCHES_PER_PAGE
         last_match_ix = (page + 1) * MATCHES_PER_PAGE
+        logging.debug(
+            f'Matches: {len(matches)};indexes for page: {first_match_ix}:{last_match_ix}'
+            f'Pages: {pages_number}; Current page: {page}'
+        )
         matches = matches[first_match_ix:last_match_ix]
         keyboard = telebot.types.InlineKeyboardMarkup(1)
         predictions = defaultdict(lambda: None)
