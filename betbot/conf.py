@@ -20,3 +20,7 @@ def get_db_file(config):
 
 def get_results_file(config):
     return os.path.join(config['data_dir'], f'results-{_make_group_name(config)}.json')
+
+
+def get_chart_race_file(config):
+    return os.path.join(config['data_dir'], f'chart-race-{_make_group_name(config)}.mp4')

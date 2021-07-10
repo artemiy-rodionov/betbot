@@ -31,6 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--results', help='Print results json and exit',
                         nargs='?', const=bot.utcnow(), type=date_arg)
     parser.add_argument('--update', help='Update json results and exit', action='store_true')
+    parser.add_argument('--chart-race', help='Build chart race file and exit', action='store_true')
     args = parser.parse_args(sys.argv[1:])
     with open(args.config) as config_file:
         config = json.load(config_file)
@@ -40,6 +41,10 @@ if __name__ == '__main__':
             result = bot.dump_info(config)
         elif args.update:
             result = bot.update_fixtures(config)
+        elif args.chart_race:
+            import chart_race
+            chart_race.build_chart_race(config)
+            result = 0
         else:
             result = bot.start(config)
         sys.exit(result)

@@ -10,6 +10,7 @@ import logging
 import pytz
 import re
 import math
+import tabulate
 import telebot
 import threading
 import time
@@ -108,7 +109,7 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None):
     group_id = config['group_id']
     if reply_message is not None:
         group_id = reply_message.chat.id
-    keyboard = telebot.types.InlineKeyboardMarkup(1)
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(telebot.types.InlineKeyboardButton(
         CHECK_RESULTS_BUTTON, url=config['results_url']
     ))
@@ -122,7 +123,7 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None):
 
 
 def send_match_predictions(bot, db, config, match):
-    keyboard = telebot.types.InlineKeyboardMarkup(1)
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(telebot.types.InlineKeyboardButton(
         CHECK_RESULTS_BUTTON, url=config['results_url']
     ))
@@ -186,7 +187,7 @@ def update_job(config, bot_runner, stopped_event):
                     continue
                 matches_to_remind.remove(m.id())
                 for player_id in db.predictions.getMissingPlayers(m.id()):
-                    keyboard = telebot.types.InlineKeyboardMarkup(1)
+                    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
                     keyboard.add(create_match_button(m))
                     bot.send_message(
                         player_id,
@@ -199,7 +200,7 @@ def update_job(config, bot_runner, stopped_event):
                     continue
                 matches_day_to_remind.remove(m.id())
                 for player_id in db.predictions.getMissingPlayers(m.id()):
-                    keyboard = telebot.types.InlineKeyboardMarkup(1)
+                    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
                     keyboard.add(create_match_button(m))
                     bot.send_message(
                         player_id,
@@ -291,7 +292,7 @@ class BotRunner(threading.Thread):
             f'Pages: {pages_number}; Current page: {page}'
         )
         matches = matches[first_match_ix:last_match_ix]
-        keyboard = telebot.types.InlineKeyboardMarkup(1)
+        keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
         predictions = defaultdict(lambda: None)
         for m, r in db.predictions.getForPlayer(player):
             predictions[m.id()] = r
@@ -334,6 +335,54 @@ class BotRunner(threading.Thread):
                 if m.is_finished():
                     continue
                 send_match_predictions(bot, self.db, self._config, m)
+
+        @bot.message_handler(
+            commands=['final_scores'], func=lambda m: self.is_admin(m.from_user)
+        )
+        def send_final_scores(message):
+            reply_message = message
+            unow = utcnow()
+            results = self.db.predictions.genResults(unow, verbose=True)
+            headers = ['Место', 'Имя', 'Очки', 'Точный счет', 'Разница', 'Победитель', 'Пенальти']
+            stats = []
+            for idx, player in enumerate(results['players'].values()):
+                is_queen = ' ♛ ' if player['is_queen'] else ' '
+                stats.append([
+                    idx+1,
+                    player['name'] + is_queen,
+                    player['score'],
+                    len([p for p in player['predictions'] if p['is_exact_score']]),
+                    len([p for p in player['predictions'] if p['is_difference_score']]),
+                    len([p for p in player['predictions'] if p['is_winner_score']]),
+                    len([p for p in player['predictions'] if p['is_penalty_score']]),
+                ])
+            text = '\nФинальная Таблица: \n'
+            text += '\n```\n'
+            text += tabulate.tabulate(stats, headers, tablefmt="pretty")
+            text += '\n```\n'
+
+            group_id = message.chat.id
+            keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+            keyboard.add(telebot.types.InlineKeyboardButton(
+                CHECK_RESULTS_BUTTON, url=self._config['results_url']
+            ))
+            bot.send_message(
+                group_id,
+                text,
+                reply_to_message_id=reply_message.message_id if reply_message else None,
+                parse_mode='Markdown',
+                reply_markup=keyboard,
+            )
+
+        @bot.message_handler(
+            commands=['chart_race'], func=lambda m: self.is_admin(m.from_user)
+        )
+        def send_chart_race(message):
+            fpath = conf.get_chart_race_file(self._config)
+            with open(fpath, 'rb') as fp:
+                video_data = fp.read()
+            group_id = message.chat.id
+            bot.send_video(group_id, video_data)
 
         @bot.message_handler(commands=['bet'], func=lambda m: m.chat.type != 'private')
         def bet_cmd_public_err(message):
@@ -524,7 +573,7 @@ class BotRunner(threading.Thread):
                     cb_data = data + '_%d' % score
                     return telebot.types.InlineKeyboardButton(str(score), callback_data=cb_data)
 
-                keyboard = telebot.types.InlineKeyboardMarkup(3)
+                keyboard = telebot.types.InlineKeyboardMarkup(row_width=3)
                 keyboard.row(make_button(0))\
                     .row(make_button(1), make_button(2), make_button(3))\
                     .row(make_button(4), make_button(5), make_button(6))\
@@ -545,7 +594,7 @@ class BotRunner(threading.Thread):
                 result = Result(int(m.group(2)), int(m.group(3)))
 
             if not result.winner and match.is_playoff():
-                keyboard = telebot.types.InlineKeyboardMarkup(1)
+                keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
                 keyboard.add(telebot.types.InlineKeyboardButton(
                     match.team(0).flag() + match.team(0).name(), callback_data=data + "_1"))
                 keyboard.add(telebot.types.InlineKeyboardButton(

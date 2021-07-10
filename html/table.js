@@ -10,9 +10,9 @@ var redraw_table = (function() {
     var head_row1 = $('<tr>');
     var head_row2 = $('<tr>');
     var foot_row = $('<tr>');
-    head_row1.append('<th colspan="2">');
-    head_row2.append('<th>&nbsp;</th>','<th>');
-    foot_row.append('<th>&nbsp;</th>','<th>');
+    head_row1.append('<th colspan="3">');
+    head_row2.append('<th>&nbsp;</th>','<th>&nbsp;</th>', '<th>');
+    foot_row.append('<th>&nbsp;</th>','<th>&nbsp;</th>', '<th>');
     var matches = data['matches'];
     for (var i = 0; i < matches.length; ++i) {
       var match_card = $('<th colspan="2">');
@@ -34,6 +34,7 @@ var redraw_table = (function() {
       var tr = $('<tr>');
       tr.append('<th>' + p['name'] + (p['is_queen'] ? ' \uD83D\uDC51' : '') + '</th>');
       tr.append('<th class="score"> ' + p['score'] + ' </th>');
+      tr.append('<th class="exact-score"> ' + p['exact_score'] + ' </th>');
       var predictions = p['predictions'];
       for (var i = 0; i < predictions.length; ++i) {
         var res = predictions[i]['result'];
@@ -59,7 +60,7 @@ var redraw_table = (function() {
         scrollX: true,
         scrollY: height,
         scrollCollapse: true,
-        order: [[1, 'desc']],
+        order: [[1, 'desc'], [2, 'desc']],
         fixedColumns: {
           leftColumns: 2
         }

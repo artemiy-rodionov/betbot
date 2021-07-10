@@ -183,14 +183,36 @@ class Result(object):
         return '%s%d - %d%s' % (BALL if self.penalty_win1() else '', self.goals1,
                                 self.goals2, BALL if self.penalty_win2() else '')
 
+    def is_winner_score(self, p):
+        if p is None:
+            return False
+        return (self.winner == p.winner)
+
+    def is_difference_score(self, p):
+        if p is None:
+            return False
+        return (self.goals1 - self.goals2) == (p.goals1 - p.goals2)
+
+    def is_exact_score(self, p):
+        if p is None:
+            return False
+        return (self.goals1 == p.goals1 and self.goals2 == p.goals2)
+
+    def is_penalty_score(self, p):
+        if p is None:
+            return False
+        return (self.winner != 0 and (self.goals1 == self.goals2) and (p.goals1 == p.goals2))
+
     def score(self, prediction):
         p = prediction
         if p is None:
             return 0
-        return (int(self.winner == p.winner) +
-                int((self.goals1 - self.goals2) == (p.goals1 - p.goals2)) +
-                int(self.goals1 == p.goals1 and self.goals2 == p.goals2) +
-                int(self.winner != 0 and (self.goals1 == self.goals2) and (p.goals1 == p.goals2)))
+        return (
+            int(self.is_winner_score(p)) +
+            int(self.is_difference_score(p)) +
+            int(self.is_exact_score(p)) +
+            int(self.is_penalty_score(p))
+        )
 
     def __str__(self):
         return "%d - %d (%d)" % (self.goals1, self.goals2, self.winner)
@@ -476,7 +498,7 @@ class Predictions(object):
         ))
         return predictions
 
-    def genResults(self, now):
+    def genResults(self, now, verbose=False):
         players = self.players.getAllPlayers()
         matches = self.matches.getMatchesBefore(now)
         predictions = defaultdict(lambda: defaultdict(lambda: None))
@@ -509,16 +531,24 @@ class Predictions(object):
                 player_id = int(player.id())
                 match_id = int(match.id())
                 p = predictions[player_id][match_id]
-                results['players'][player_id]['predictions'].append({
+                pl_result = match.result()
+                score = None if not match.is_finished() else pl_result.score(p)
+                prediction_info = {
                     'match_id': match_id,
                     'result': None if p is None else p.label(),
-                    'score': None if not match.is_finished() else match.result().score(p)
-                })
+                    'score': score,
+                }
+                prediction_info['is_exact_score'] = pl_result.is_exact_score(p) if score else None
+                if verbose and match.is_finished():
+                    prediction_info['is_winner_score'] = pl_result.is_winner_score(p)
+                    prediction_info['is_difference_score'] = pl_result.is_difference_score(p)
+                    prediction_info['is_penalty_score'] = pl_result.is_penalty_score(p)
+                results['players'][player_id]['predictions'].append(prediction_info)
         for player in players:
             score = sum(0 if s['score'] is None else s['score']
                         for s in results['players'][player.id()]['predictions'])
             exact_score = sum(
-                1 if s['score'] and s['score'] == 3 else 0
+                1 if s['is_exact_score'] else 0
                 for s in results['players'][player.id()]['predictions']
             )
             results['players'][player.id()]['name'] = player.name()
