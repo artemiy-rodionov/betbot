@@ -43,43 +43,6 @@ def api_football(config):
     return data['response']
 
 
-def convert_api_v2_season(data):
-    """Deprecated rapidapi v2 converter for rfpl season"""
-    teams = {}
-    matches = defaultdict(list)
-    fixtures = data['api']['fixtures']
-    for fix in fixtures:
-        for key in ('homeTeam', 'awayTeam'):
-            team = fix[key]
-            tid = team['team_id']
-            teams[tid] = {
-                'id': tid,
-                'name': team['team_name'],
-                'logo': team['logo'],
-                'fifaCode': team['team_name'],
-                'emojiString': None
-            }
-        tour = re.search(r'\d+', fix['round']).group()
-        matches[tour].append({
-            'date': fix['event_date'],
-            'name': fix['fixture_id'],
-            'type': 'group',
-            'home_result': fix['goalsHomeTeam'],
-            'away_result': fix['goalsAwayTeam'],
-            'home_team': fix['homeTeam']['team_id'],
-            'away_team': fix['awayTeam']['team_id'],
-            'finished': fix['statusShort'] == 'FT',
-            'round': tour,
-        })
-    data['teams'] = teams.values()
-    assert len(data['teams']) == 16
-    data['league'] = {
-        rnd: {'name': rnd, 'matches': matches}
-        for rnd, matches in matches.items()
-    }
-    return data
-
-
 def get_teams_info(config):
     with open(config['uefa_2020_file']) as fp:
         data = json.load(fp)
@@ -92,9 +55,10 @@ def get_teams_info(config):
     }
 
 
-def convert_api_v3_cup(config, data):
+def convert_api_v3(config, data):
     """V3 converter for uefa cup"""
     teams = {}
+    league_matches = defaultdict(list)
     group_matches = defaultdict(list)
     knockout_matches = defaultdict(list)
     fixtures = data
@@ -130,10 +94,15 @@ def convert_api_v3_cup(config, data):
             'finished': fix['fixture']['status']['short'] in ('FT', 'AET', 'PEN'),
             'round': fix_round,
         }
-        if 'Group' in fix_round:
+        if 'Season' in fix_round:
+            tour = re.search(r'\d+', fix_round).group()
+            match['type'] = 'group'
+            match['round'] = tour
+            league_matches[tour].append(match)
+        elif 'Group' in fix_round:
             match['type'] = 'group'
             group_matches[fix_round].append(match)
-        if fix_round in (
+        elif fix_round in (
             '8th Finals',
             'Quarter-finals',
             'Semi-finals',
@@ -156,6 +125,10 @@ def convert_api_v3_cup(config, data):
         rnd: {'name': rnd, 'matches': matches}
         for rnd, matches in knockout_matches.items()
     }
+    converted['league'] = {
+        rnd: {'name': rnd, 'matches': matches}
+        for rnd, matches in league_matches.items()
+    }
     return converted
 
 
@@ -163,7 +136,7 @@ def load_fixtures(config):
     data_fpath = conf.get_data_file(config)
     with open(data_fpath) as fp:
         season_data = json.load(fp)
-    return convert_api_v3_cup(config, season_data)
+    return convert_api_v3(config, season_data)
 
 
 def save_fixtures(config):

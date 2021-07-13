@@ -278,7 +278,7 @@ class BotRunner(threading.Thread):
 
     def create_matches_page(self, page, player):
         db = self.get_db()
-        matches = db.matches.getMatchesAfter(utcnow())
+        matches = db.matches.getMatchesAfter(utcnow(), days_limit=60)
         matches_number = len(matches)
         if matches_number == 0:
             return None

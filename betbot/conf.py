@@ -3,12 +3,13 @@ import os
 
 def get_data_file(config):
     lid = config['league_id']
+    season = config.get('season', 'no')
     data_dir = config['data_dir']
-    return os.path.join(data_dir, f'fixtures-{lid}.json')
+    return os.path.join(data_dir, f'fixtures-{lid}-{season}.json')
 
 
 def _make_group_name(config):
-    return f'{config["league_id"]}-{config["group_id"]}'
+    return f'{config["league_id"]}-{config["season"]}-{config["group_id"]}'
 
 
 def get_db_file(config):

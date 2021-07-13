@@ -1,5 +1,5 @@
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import sqlite3
 from collections import defaultdict
@@ -332,9 +332,16 @@ class Matches(object):
             match = Match(round, match_info, teams)
             self.matches[match.id()] = match
 
-    def getMatchesAfter(self, time):
+    def getMatchesAfter(self, time, days_limit=None):
+        if days_limit:
+            time_top = time + timedelta(days=days_limit)
+        else:
+            time_top = None
         return sorted(
-            [m for m in self.matches.values() if m.start_time() > time],
+            [
+                m for m in self.matches.values()
+                if m.start_time() > time and (time_top is None or m.start_time() < time_top)
+            ],
             key=lambda m: (m.start_time(), not m.is_finished(), m.id())
         )
 
