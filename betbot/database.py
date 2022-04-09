@@ -404,9 +404,17 @@ class Player(object):
         return '%s (%d)' % (self.name(), self.id())
 
 
-class Players(object):
-    def __init__(self, db_path, admin_id):
+class DbTable:
+    def __init__(self, db_path):
         self.db_path = db_path
+
+    def db(self):
+        return dbopen(self.db_path)
+
+
+class Players(DbTable):
+    def __init__(self, db_path, admin_id):
+        super().__init__(db_path)
         self.admin_id = admin_id
         with self.db() as db:
             db.execute('''CREATE TABLE IF NOT EXISTS players
@@ -456,13 +464,10 @@ class Players(object):
             db.execute(
                 '''UPDATE players SET is_queen=? WHERE id=?''', (int(is_queen), id))
 
-    def db(self):
-        return dbopen(self.db_path)
 
-
-class Predictions(object):
+class Predictions(DbTable):
     def __init__(self, db_path, players, matches):
-        self.db_path = db_path
+        super().__init__(db_path)
         self.players = players
         self.matches = matches
         with self.db() as db:
@@ -585,6 +590,3 @@ class Predictions(object):
                                (SELECT player_id FROM predictions WHERE match_id = ?)''',
                               (match_id,))
             return [row[0] for row in rows]
-
-    def db(self):
-        return dbopen(self.db_path)

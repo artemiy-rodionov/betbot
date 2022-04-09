@@ -370,7 +370,6 @@ def handle_query(query):
 
 
 class UpdateJob:
-    LAST_UPDATE = None
     MATCHES_TO_NOTIFY = None
     MATCHES_IN_PROGRESS = None
     MATCHES_TO_REMIND = None
@@ -383,7 +382,6 @@ class UpdateJob:
         db = db_helper.get_db()
 
         unow = utils.utcnow()
-        cls.LAST_UPDATE = unow - datetime.timedelta(seconds=UPDATE_INTERVAL_SEC)
         cls.MATCHES_TO_NOTIFY = {m.id() for m in db.matches.getMatchesAfter(unow)}
         cls.MATCHES_IN_PROGRESS = {
             m.id() for m in db.matches.getMatchesBefore(unow)
@@ -470,7 +468,7 @@ def start():
     UpdateJob.init_update_job()
     job = UpdateJob()
     job()
-    schedule.every(10).seconds.do(job)
+    schedule.every(UPDATE_INTERVAL_SEC).seconds.do(job)
     while True:
         schedule.run_pending()
         time.sleep(1)
