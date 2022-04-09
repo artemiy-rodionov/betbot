@@ -37,11 +37,21 @@ def sorted_matches(matches_info):
 
 class Database(object):
     def __init__(self, config):
-        matches_data = sources.load_fixtures(config)
-        self._db_path = conf.get_db_file(config)
+        self.config = config
+        self._db_path = conf.get_db_file(self.config)
+        self.reload_data()
+
+    def reload_data(self):
+        self.reload_fixtures()
+        self.reload_tables()
+
+    def reload_fixtures(self):
+        matches_data = sources.load_fixtures(self.config)
         self.teams = Teams(matches_data)
         self.matches = Matches(matches_data, self.teams)
-        self.players = Players(self._db_path, config['admin_id'])
+
+    def reload_tables(self):
+        self.players = Players(self._db_path, self.config['admin_id'])
         self.predictions = Predictions(self._db_path, self.players, self.matches)
 
 

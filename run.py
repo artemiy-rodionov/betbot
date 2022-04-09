@@ -8,7 +8,7 @@ import logging
 
 import pytz
 
-from betbot import bot
+from betbot import bot, utils, commands
 
 logging.basicConfig(
     format='%(asctime)s (%(filename)s:%(lineno)d %(threadName)s) %(levelname)s: "%(message)s"'
@@ -25,26 +25,23 @@ def date_arg(s):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('config')
     parser.add_argument('-d', '--dump', help='Print teams and matches and exit',
                         action='store_true')
     parser.add_argument('-r', '--results', help='Print results json and exit',
-                        nargs='?', const=bot.utcnow(), type=date_arg)
+                        nargs='?', const=utils.utcnow(), type=date_arg)
     parser.add_argument('--update', help='Update json results and exit', action='store_true')
     parser.add_argument('--chart-race', help='Build chart race file and exit', action='store_true')
     args = parser.parse_args(sys.argv[1:])
-    with open(args.config) as config_file:
-        config = json.load(config_file)
-        if args.results:
-            result = bot.dump_results(config, args.results)
-        elif args.dump:
-            result = bot.dump_info(config)
-        elif args.update:
-            result = bot.update_fixtures(config)
-        elif args.chart_race:
-            import chart_race
-            chart_race.build_chart_race(config)
-            result = 0
-        else:
-            result = bot.start(config)
-        sys.exit(result)
+    if args.results:
+        result = commands.dump_results(args.results)
+    elif args.dump:
+        result = commands.dump_info()
+    elif args.update:
+        result = commands.update_fixtures()
+    elif args.chart_race:
+        import chart_race
+        chart_race.build_chart_race()
+        result = 0
+    else:
+        result = bot.start()
+    sys.exit(result)

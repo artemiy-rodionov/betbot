@@ -2,3 +2,7 @@
 *.swo
 *.pyc
 instance/
+html/results.json
+
+# Ignore dynaconf secret files
+.secrets.*
