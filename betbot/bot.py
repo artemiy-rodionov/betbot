@@ -21,6 +21,7 @@ from config import config
 from . import conf, helpers, database, messages, utils, commands
 
 telebot.logger.setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 UPDATE_INTERVAL_SEC = 60
 REMIND_BEFORE = datetime.timedelta(minutes=30)
@@ -49,7 +50,7 @@ class DbHelper:
 
     def register_player(self, player):
         assert(not self.is_registered(player))
-        logging.info(f'Register player {player}')
+        logger.info(f'Register player {player}')
         return self.get_db().players.createPlayer(player.id, player.first_name, player.last_name)
 
     def get_player(self, player):
@@ -354,7 +355,7 @@ def handle_query(query):
     if match.start_time() < unow:
         return edit_message(messages.TOO_LATE_MSG % RESULTS_URL)
 
-    logging.info(
+    logger.info(
         'prediction player: %s match: %s result: %s time: %s' % (
             player.id(), match.id(), str(result), unow
         )
@@ -377,7 +378,7 @@ class UpdateJob:
 
     @classmethod
     def init_update_job(cls):
-        logging.info("Init regular update job")
+        logger.info("Init regular update job")
         db_helper.reload_db()
         db = db_helper.get_db()
 
@@ -387,13 +388,28 @@ class UpdateJob:
             m.id() for m in db.matches.getMatchesBefore(unow)
             if not m.is_finished()
         }
-        logging.info(f'Found matches in progress: {cls.MATCHES_IN_PROGRESS}')
+        logger.info(f'Found matches in progress: {cls.MATCHES_IN_PROGRESS}')
         cls.MATCHES_TO_REMIND = {
             m.id() for m in db.matches.getMatchesAfter(unow + REMIND_BEFORE)
         }
         cls.MATCHES_DAY_TO_REMIND = {
             m.id() for m in db.matches.getMatchesAfter(unow + REMIND_DAY_BEFORE)
         }
+
+    def _remind_players(self, db, match, msg):
+        for player_id in db.predictions.getMissingPlayers(match.id()):
+            keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+            keyboard.add(helpers.create_match_button(match))
+            try:
+                bot.send_message(
+                    player_id,
+                    msg,
+                    parse_mode='Markdown',
+                    reply_markup=keyboard
+                )
+            except Exception as err:
+                logger.info("Error sending remind message to player %s: %s", player_id, err)
+                continue
 
     def _update_work(self):
         db_helper.reload_db()
@@ -404,7 +420,7 @@ class UpdateJob:
         results_fpath = conf.get_results_file(config)
         with open(results_fpath, 'w') as fp:
             json.dump(results, fp)
-            logging.info('Results file dumped')
+            logger.info('Results file dumped')
 
         for m in db.matches.getMatchesBefore(last_update):
             mid = m.id()
@@ -412,36 +428,21 @@ class UpdateJob:
                 continue
             self.MATCHES_TO_NOTIFY.remove(mid)
             self.MATCHES_IN_PROGRESS.add(mid)
-            logging.info(f'Add match {mid} in progress')
+            logger.info(f'Add match {mid} in progress')
             helpers.send_match_predictions(bot, db, config, m)
 
         for m in db.matches.getMatchesBefore(last_update + REMIND_BEFORE):
             if m.id() not in self.MATCHES_TO_REMIND:
                 continue
             self.MATCHES_TO_REMIND.remove(m.id())
-            for player_id in db.predictions.getMissingPlayers(m.id()):
-                keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
-                keyboard.add(helpers.create_match_button(m))
-                bot.send_message(
-                    player_id,
-                    messages.REMIND_MSG,
-                    parse_mode='Markdown',
-                    reply_markup=keyboard
-                )
+            self._remind_players(db, m, messages.REMIND_MSG)
 
         for m in db.matches.getMatchesBefore(last_update + REMIND_DAY_BEFORE):
             if m.id() not in self.MATCHES_DAY_TO_REMIND:
                 continue
             self.MATCHES_DAY_TO_REMIND.remove(m.id())
-            for player_id in db.predictions.getMissingPlayers(m.id()):
-                keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
-                keyboard.add(helpers.create_match_button(m))
-                bot.send_message(
-                    player_id,
-                    messages.REMIND_DAY_MSG,
-                    parse_mode='Markdown',
-                    reply_markup=keyboard
-                )
+            self._remind_players(db, m, messages.REMIND_DAY_MSG)
+
         finished_matches = []
         for mid in self.MATCHES_IN_PROGRESS:
             m = db.matches.getMatch(mid)
@@ -450,14 +451,14 @@ class UpdateJob:
         self.MATCHES_IN_PROGRESS -= {m.id() for m in finished_matches}
         if finished_matches:
             helpers.send_scores(bot, db, config, finished_matches=finished_matches)
-        logging.info('update finished')
+        logger.info('update finished')
 
     def __call__(self):
-        logging.info("Start regular update job")
+        logger.info("Start regular update job")
         try:
             self._update_work()
         except Exception:
-            logging.error(traceback.format_exc())
+            logger.error(traceback.format_exc())
 
 
 def start():

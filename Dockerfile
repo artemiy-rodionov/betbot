@@ -8,4 +8,5 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 ADD betbot /code/betbot
 ADD run.py /code
+ADD config.py /code
 ENTRYPOINT ["python3", "run.py"]
