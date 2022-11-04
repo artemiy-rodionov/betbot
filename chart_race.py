@@ -7,6 +7,8 @@ from collections import defaultdict
 import bar_chart_race as bcr
 import pandas as pd
 import json
+
+from config import config
 from betbot import conf
 
 
@@ -20,7 +22,7 @@ def parse_dts(val):
     return dt
 
 
-def build_chart_race(config):
+def build_chart_race():
     results_fpath = conf.get_results_file(config)
     with open(results_fpath) as fp:
         results = json.load(fp)
@@ -42,7 +44,8 @@ def build_chart_race(config):
                         curscore = res[pl['name']][-1]
                     except IndexError:
                         curscore = 0
-                    res[pl['name']].append(curscore + pr['score'])
+                    pr_score = pr['score'] or 0
+                    res[pl['name']].append(curscore + pr_score)
                     break
     df = pd.DataFrame.from_dict(res)
     chart_race_fpath = conf.get_chart_race_file(config)
