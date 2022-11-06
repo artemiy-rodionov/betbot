@@ -44,7 +44,7 @@ def api_football(config):
 
 
 def get_teams_info(config):
-    with open(config['uefa_2020_file']) as fp:
+    with open(config['countries_file']) as fp:
         data = json.load(fp)
     return {
         c['name']: {

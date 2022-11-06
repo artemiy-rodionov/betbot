@@ -4,6 +4,7 @@ Created on Sat Jun 04 12:05:50 2016
 
 @author: SSundukov
 """
+from functools import cached_property
 import json
 import logging
 import re
@@ -38,7 +39,10 @@ class DbHelper:
     def __init__(self):
         self._config = config
         self.db_lock = threading.Lock()
-        self.db = database.Database(config)
+
+    @cached_property
+    def db(self):
+        return database.Database(config)
 
     def get_db(self):
         with self.db_lock:
