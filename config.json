@@ -1,7 +1,7 @@
 {
  "data_dir": "instance",
  "log_file": "instance/betting.log",
- "uefa_2020_file": "data/uefa-2020.json",
+ "countries_file": "data/countries.json",
  "token": "",
  "bot_name": <bot-name>,
  "admin_id": <bot-admin-id-int>,
