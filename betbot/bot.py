@@ -222,7 +222,7 @@ def unmake_queen(message):
     commands=['update_fixtures'], func=lambda m: db_helper.is_admin(m.from_user)
 )
 def cmd_update_fixtures(message):
-    commands.update_fixtures(config)
+    commands.update_fixtures()
     msg = str(db_helper.get_db().matches)
     bot.send_message(message.chat.id, msg)
 
