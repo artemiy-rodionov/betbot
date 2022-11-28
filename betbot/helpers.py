@@ -104,19 +104,19 @@ def send_match_predictions(bot, db, config, match):
     )
 
 
-def create_matches_page(db, page, player, matches_per_page=MATCHES_PER_PAGE):
+def create_matches_page(db, page_idx, player, matches_per_page=MATCHES_PER_PAGE):
     matches = db.matches.getMatchesAfter(utils.utcnow(), days_limit=60)
     matches_number = len(matches)
     if matches_number == 0:
         return None
 
-    pages_number = max(1, math.ceil((matches_number - 1) / matches_per_page))
-    page = min(page, pages_number - 1)
-    first_match_ix = page * matches_per_page
-    last_match_ix = (page + 1) * matches_per_page
+    pages_number = max(1, math.ceil(matches_number / matches_per_page))
+    page_idx = min(page_idx, pages_number - 1)
+    first_match_ix = page_idx * matches_per_page
+    last_match_ix = (page_idx + 1) * matches_per_page
     logging.debug(
         f'Matches: {len(matches)};indexes for page: {first_match_ix}:{last_match_ix}'
-        f'Pages: {pages_number}; Current page: {page}'
+        f'Pages: {pages_number}; Current page: {page_idx+1}'
     )
     matches = matches[first_match_ix:last_match_ix]
     keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
@@ -130,19 +130,19 @@ def create_matches_page(db, page, player, matches_per_page=MATCHES_PER_PAGE):
         navs.append(
             telebot.types.InlineKeyboardButton(
                 messages.LEFT_ARROW,
-                callback_data='l_%d' % ((page + pages_number - 1) % pages_number)
+                callback_data='l_%d' % ((page_idx + pages_number - 1) % pages_number)
             )
         )
         navs.append(
             telebot.types.InlineKeyboardButton(
-                '%d/%d' % (page + 1, pages_number),
-                callback_data='l_%d' % page
+                '%d/%d' % (page_idx + 1, pages_number),
+                callback_data='l_%d' % page_idx
             )
         )
         navs.append(
             telebot.types.InlineKeyboardButton(
                 messages.RIGHT_ARROW,
-                callback_data='l_%d' % ((page + 1) % pages_number)
+                callback_data='l_%d' % ((page_idx + 1) % pages_number)
             )
         )
         keyboard.row(*navs)
