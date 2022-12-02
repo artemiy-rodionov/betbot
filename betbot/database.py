@@ -6,6 +6,7 @@ from collections import defaultdict
 
 import dateutil.parser
 
+from config import config as global_config
 from .sqlite_context import dbopen
 from . import sources
 from . import conf
@@ -14,6 +15,8 @@ BLANK_FLAG = '\U0001F3F3\uFE0F'
 ZWNBSP = '\uFEFF'
 CUP = '\U0001F3C6'
 BRONZE_MEDAL = '\U0001F949'
+
+EXTRA_SCORE_MODE = global_config['extra_score']
 
 MSK_TZ = pytz.timezone('Europe/Moscow')
 
@@ -208,7 +211,7 @@ class Result(object):
             return False
         return (self.goals1 == p.goals1 and self.goals2 == p.goals2)
 
-    def is_penalty_score(self, p):
+    def is_extra_score(self, p):
         if p is None:
             return False
         return (self.winner != 0 and (self.goals1 == self.goals2) and (p.goals1 == p.goals2))
@@ -221,7 +224,7 @@ class Result(object):
             int(self.is_winner_score(p)) +
             int(self.is_difference_score(p)) +
             int(self.is_exact_score(p)) +
-            int(self.is_penalty_score(p))
+            int(self.is_extra_score(p))
         )
 
     def __str__(self):
@@ -262,19 +265,33 @@ class Match(object):
         'Final': CUP
     }
 
-    @staticmethod
-    def parse_result(match_info):
-        h, a = match_info['home_result'], match_info['away_result']
+    @classmethod
+    def parse_result(cls, match_info):
+        h, a = cls.get_match_result(match_info)
         if h is None or a is None:
             return None
         if 'winner' not in match_info or match_info['winner'] is None:
             return Result(h, a)
+        if EXTRA_SCORE_MODE == 2:
+            home, away = cls.get_fulltime_result(match_info)
+        else:
+            home, away = h, a
         return Result(
-            h, a,
+            home, away,
             {
                 'home': 1,
                 'away': 2,
             }[match_info['winner']])
+
+    @classmethod
+    def get_match_result(cls, match_info):
+        """Extratime."""
+        return match_info['home_result'], match_info['away_result']
+
+    @classmethod
+    def get_fulltime_result(cls, match_info):
+        """Fulltime result."""
+        return match_info['home_full'], match_info['away_full']
 
     def __init__(self, round, match_info, teams):
         self._id = match_info['name']
@@ -282,9 +299,9 @@ class Match(object):
         self._teams = teams.get_participants(match_info)
         self._start_time = dateutil.parser.parse(
             match_info['date']).astimezone(pytz.utc)
-        self._is_playoff = 'home_penalty' in match_info
+        self._is_playoff = match_info['is_playoff']
         self._is_finished = match_info['finished']
-        self._result = Match.parse_result(match_info)
+        self._result = self.parse_result(match_info)
         assert(not self._is_finished or self._result is not None)
 
     def id(self):
@@ -564,7 +581,7 @@ class Predictions(DbTable):
                 if verbose and match.is_finished():
                     prediction_info['is_winner_score'] = pl_result.is_winner_score(p)
                     prediction_info['is_difference_score'] = pl_result.is_difference_score(p)
-                    prediction_info['is_penalty_score'] = pl_result.is_penalty_score(p)
+                    prediction_info['is_extra_score'] = pl_result.is_extra_score(p)
                 results['players'][player_id]['predictions'].append(prediction_info)
         for player in players:
             score = sum(0 if s['score'] is None else s['score']

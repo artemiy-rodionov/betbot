@@ -3,7 +3,6 @@
 import sys
 import datetime
 import argparse
-import json
 import logging
 
 import pytz

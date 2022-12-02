@@ -9,6 +9,8 @@
  "group_id": <telegram-group-id-int>,
  "results_url": "<RESULTS URL>",
  "api_token": "<api-football-token>",
+ // 0 -disabled, 1-penalty, 2-extra
+ "extra_score": 0,
  "league_id": <api-football-league-id>,
  "season": <api-footbal-season>
 }

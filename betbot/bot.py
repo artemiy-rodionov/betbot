@@ -24,11 +24,12 @@ from . import conf, helpers, database, messages, utils, commands
 telebot.logger.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-UPDATE_INTERVAL_SEC = 60
+UPDATE_INTERVAL_SEC = 5
 REMIND_BEFORE = datetime.timedelta(minutes=30)
 REMIND_DAY_BEFORE = datetime.timedelta(hours=24)
 
 RESULTS_URL = config['results_url']
+EXTRA_SCORE_MODE = config['extra_score']
 
 MSK_TZ = pytz.timezone('Europe/Moscow')
 
@@ -353,7 +354,10 @@ def handle_query(query):
             match.team(0).flag() + match.team(0).name(), callback_data=data + "_1"))
         keyboard.add(telebot.types.InlineKeyboardButton(
             match.team(1).flag() + match.team(1).name(), callback_data=data + "_2"))
-        return edit_message(messages.WINNER_REQUEST, reply_markup=keyboard)
+        if EXTRA_SCORE_MODE == 2:
+            return edit_message(messages.EXTRA_WINNER_REQUEST, reply_markup=keyboard)
+        else:
+            return edit_message(messages.PENALTY_WINNER_REQUEST, reply_markup=keyboard)
 
     unow = utils.utcnow()
     if match.start_time() < unow:

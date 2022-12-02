@@ -1,14 +1,12 @@
 import logging
 import math
-import json
-import datetime
 from collections import defaultdict
 
 import pytz
 import telebot
 
 from .messages import *
-from . import sources, messages, utils
+from . import messages, utils
 
 MSK_TZ = pytz.timezone('Europe/Moscow')
 MATCHES_PER_PAGE = 8
