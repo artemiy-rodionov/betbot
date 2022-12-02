@@ -93,6 +93,7 @@ def convert_api_v3(config, data):
             'away_team': fix['teams']['away']['id'],
             'finished': fix['fixture']['status']['short'] in ('FT', 'AET', 'PEN'),
             'round': fix_round,
+            'is_playoff': False,
         }
         if 'Season' in fix_round:
             tour = re.search(r'\d+', fix_round).group()
@@ -103,13 +104,19 @@ def convert_api_v3(config, data):
             match['type'] = 'group'
             group_matches[fix_round].append(match)
         elif fix_round in (
+            'Round of 16',
             '8th Finals',
             'Quarter-finals',
             'Semi-finals',
             'Final'
         ):
+            match['is_playoff'] = True
             match['home_penalty'] = fix['score']['penalty']['home']
             match['away_penalty'] = fix['score']['penalty']['away']
+            match['home_full'] = fix['score']['fulltime']['home']
+            match['away_full'] = fix['score']['fulltime']['away']
+            match['home_extra'] = fix['score']['extratime']['home']
+            match['away_extra'] = fix['score']['extratime']['away']
             match['winner'] = winner_team
             match['type'] = 'winner'
             knockout_matches[fix_round].append(match)
