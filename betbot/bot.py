@@ -24,7 +24,7 @@ from . import conf, helpers, database, messages, utils, commands
 telebot.logger.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-UPDATE_INTERVAL_SEC = 5
+UPDATE_INTERVAL_SEC = 60
 REMIND_BEFORE = datetime.timedelta(minutes=30)
 REMIND_DAY_BEFORE = datetime.timedelta(hours=24)
 
