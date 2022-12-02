@@ -137,6 +137,7 @@ def test_playoff_score_default(monkeypatch):
     assert result_win.score(database.Result(1, 0)) == 3
 
     result_extra = matches.getMatch('playoff_1-1extra').result()
+    assert result_extra.score(database.Result(2, 1)) == 3
     assert result_extra.score(database.Result(1, 0)) == 2
     assert result_extra.score(database.Result(2, 0)) == 1
     assert result_extra.score(database.Result(0, 1)) == 0
