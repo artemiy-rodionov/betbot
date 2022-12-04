@@ -1,15 +1,19 @@
-import pytz
+import logging
 from datetime import datetime, timedelta
 import re
 import sqlite3
 from collections import defaultdict
 
+import pytz
 import dateutil.parser
 
 from config import config as global_config
 from .sqlite_context import dbopen
 from . import sources
 from . import conf
+
+logger = logging.getLogger(__name__)
+
 
 BLANK_FLAG = '\U0001F3F3\uFE0F'
 ZWNBSP = '\uFEFF'
@@ -19,6 +23,7 @@ BRONZE_MEDAL = '\U0001F949'
 EXTRA_SCORE_MODE = global_config['extra_score']
 
 MSK_TZ = pytz.timezone('Europe/Moscow')
+GROUP_TZ = MSK_TZ
 
 
 def utcnow():
@@ -37,6 +42,8 @@ def iter_matches(matches_info):
 def sorted_matches(matches_info):
     return sorted(iter_matches(matches_info), key=lambda m: m[1]['name'])
 
+class DbError(Exception):
+    """Db error."""
 
 class Database(object):
     def __init__(self, config):
@@ -389,15 +396,22 @@ class Matches(object):
 
 
 class Player(object):
-    def __init__(self, id, first_name, last_name, display_name, is_queen):
+    def __init__(self, id, first_name, last_name, display_name, is_queen, tz):
         self._id = id
         self._first_name = first_name
         self._last_name = last_name
         self._display_name = display_name
         self._is_queen = is_queen
+        if tz is None:
+            self._tz = MSK_TZ
+        else:
+            self._tz = pytz.timezone(tz)
 
     def id(self):
         return self._id
+
+    def tz(self):
+        return self._tz
 
     def name(self):
         if self._display_name is not None:
@@ -436,50 +450,61 @@ class Players(DbTable):
         with self.db() as db:
             db.execute('''CREATE TABLE IF NOT EXISTS players
                     (id integer, first_name text, last_name text, display_name text,
-                     is_queen integer not null default 1)''')
+                     is_queen integer not null default 1,timezone text)''')
 
-    def getPlayer(self, id):
+    def getPlayer(self, pid):
         with self.db() as db:
             res = db.execute(
-                '''SELECT first_name, last_name, display_name, is_queen FROM players WHERE id=?''',
-                (id,)
+                '''SELECT first_name, last_name, display_name, is_queen, timezone FROM players WHERE id=?''',
+                (pid,)
             ).fetchone()
         if res is None:
             return None
-        return Player(id, res[0], res[1], res[2], bool(res[3]))
+        return Player(pid, res[0], res[1], res[2], bool(res[3]), tz=res[4])
 
     def getAllPlayers(self):
         players = []
         with self.db() as db:
             for row in db.execute(
-                '''SELECT first_name, last_name, display_name, is_queen, id FROM players'''
+                '''SELECT first_name, last_name, display_name, is_queen, id, timezone FROM players'''
             ):
                 players.append(Player(
                     row[4],
                     row[0],
                     row[1],
                     row[2],
-                    bool(row[3])
+                    bool(row[3]),
+                    tz=row[5]
                 ))
         return players
 
-    def createPlayer(self, id, first_name, last_name, is_queen=False):
+    def createPlayer(self, pid, first_name, last_name, is_queen=False):
         with self.db() as db:
             db.execute(
                 '''INSERT INTO players (id, first_name, last_name, display_name, is_queen)
-                    VALUES (?,?,?,?,?)''', (id, first_name, last_name, None, int(is_queen)))
-        return self.getPlayer(id)
+                    VALUES (?,?,?,?,?)''', (pid, first_name, last_name, None, int(is_queen))
+            )
+        return self.getPlayer(pid)
 
-    def isRegistered(self, id):
-        return self.getPlayer(id) is not None
+    def isRegistered(self, pid):
+        return self.getPlayer(pid) is not None
 
-    def isAdmin(self, id):
-        return id == self.admin_id
+    def isAdmin(self, pid):
+        return pid == self.admin_id
 
-    def changeIsQueen(self, id, is_queen):
+    def changeIsQueen(self, pid, is_queen):
         with self.db() as db:
             db.execute(
-                '''UPDATE players SET is_queen=? WHERE id=?''', (int(is_queen), id))
+                '''UPDATE players SET is_queen=? WHERE id=?''', (int(is_queen), pid)
+            )
+
+    def changeTz(self, pid, tz):
+        logger.info('Setting timezone to %s for player %d', tz, pid)
+        assert pytz.timezone(tz)
+        with self.db() as db:
+            db.execute(
+                '''UPDATE players SET timezone=? WHERE id=?''', (tz, pid)
+            )
 
 
 class Predictions(DbTable):
@@ -563,7 +588,7 @@ class Predictions(DbTable):
                 'result': match.result().label() if match.result() is not None else '―',
                 'label': match.label(match.result()),
                 'round': match.short_round(),
-                'time': match.start_time().astimezone(MSK_TZ).strftime('%d.%m %H:%M'),
+                'time': match.start_time().astimezone(GROUP_TZ).strftime('%d.%m %H:%M'),
                 'short_label': match.label(None, short=True)
             })
             for player in players:

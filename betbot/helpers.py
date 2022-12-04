@@ -2,14 +2,12 @@ import logging
 import math
 from collections import defaultdict
 
-import pytz
 import telebot
 
 from .messages import *
 from . import messages, utils
 
 logger = logging.getLogger(__name__)
-MSK_TZ = pytz.timezone('Europe/Moscow')
 MATCHES_PER_PAGE = 8
 
 
@@ -34,8 +32,8 @@ def change_queen(bot, db_helper, message, is_queen):
     bot.send_message(message.chat.id, messages.SUCCESS)
 
 
-def create_match_button(match, prediction=None):
-    start_time_str = match.start_time().astimezone(MSK_TZ).strftime('%d.%m %H:%M')
+def create_match_button(match, tz, prediction=None):
+    start_time_str = match.start_time().astimezone(tz).strftime('%d.%m %H:%M')
     label = '{}: {} {}'.format(
         match.short_round(), match.label(prediction, short=True), start_time_str
     )
@@ -123,7 +121,7 @@ def create_matches_page(db, page_idx, player, matches_per_page=MATCHES_PER_PAGE)
     for m, r in db.predictions.getForPlayer(player):
         predictions[m.id()] = r
     for m in matches:
-        keyboard.add(create_match_button(m, predictions[m.id()]))
+        keyboard.add(create_match_button(m, player.tz(), predictions[m.id()]))
     navs = []
     if pages_number > 1:
         navs.append(

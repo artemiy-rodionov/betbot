@@ -32,8 +32,6 @@ REMIND_DAY_BEFORE = datetime.timedelta(hours=24)
 RESULTS_URL = config['results_url']
 EXTRA_SCORE_MODE = config['extra_score']
 
-MSK_TZ = pytz.timezone('Europe/Moscow')
-
 bot = telebot.TeleBot(config["token"])
 
 
@@ -54,14 +52,14 @@ class DbHelper:
         with self.db_lock:
             self.db.reload_data()
 
-    def register_player(self, player):
-        assert(not self.is_registered(player))
-        logger.info(f'Register player {player}')
-        return self.get_db().players.createPlayer(player.id, player.first_name, player.last_name)
+    def register_player(self, user):
+        assert(not self.is_registered(user))
+        logger.info(f'Register player {user}')
+        return self.get_db().players.createPlayer(user.id, user.first_name, user.last_name)
 
-    def get_player(self, player):
-        assert(self.is_registered(player))
-        return self.get_db().players.getPlayer(player.id)
+    def get_player(self, user):
+        assert(self.is_registered(user))
+        return self.get_db().players.getPlayer(user.id)
 
     def is_registered(self, user):
         return self.get_db().players.isRegistered(user.id)
@@ -78,6 +76,28 @@ def help_command(message):
     text = messages.HELP_MSG % RESULTS_URL
     if db_helper.is_admin(message.from_user):
         text += '\n' + messages.ADMIN_HELP_MSG
+    helpers.send_markdown(bot, message, text)
+
+
+@bot.message_handler(commands=['timezone'])
+def set_tz_command(message):
+    player = db_helper.get_player(message.from_user)
+    if not player:
+        return
+    msg = message.text
+    cand_tz = msg.replace('/timezone', '').strip()
+    error_msg = ''
+    if cand_tz:
+        try:
+            tz = pytz.timezone(cand_tz)
+        except pytz.UnknownTimeZoneError:
+            error_msg = f'\nОшибка: Неизвестный часовой пояс {cand_tz}'
+        else:
+            pid = player.id()
+            db_helper.get_db().players.changeTz(pid, tz.zone)
+            player = db_helper.get_player(message.from_user)
+    text = messages.TIMEZONE_MSG.format(tz=player.tz().zone)
+    text += '\n\n' + messages.TIMEZONE_HELP_MSG + error_msg
     helpers.send_markdown(bot, message, text)
 
 
@@ -379,8 +399,8 @@ def handle_query(query):
         )
     )
     db.predictions.addPrediction(player, match, result, unow)
-    start_time_str = match.start_time().astimezone(MSK_TZ).strftime('%d.%m в %H:%M')
-    bet_time_str = unow.astimezone(MSK_TZ).strftime('%d.%m в %H:%M:%S')
+    start_time_str = match.start_time().astimezone(player.tz()).strftime('%d.%m в %H:%M')
+    bet_time_str = unow.astimezone(player.tz()).strftime('%d.%m в %H:%M:%S')
     msg = messages.CONFIRMATION_MSG % (
         match.label(result),
         bet_time_str, start_time_str, player.short_name(), RESULTS_URL
@@ -416,8 +436,9 @@ class UpdateJob:
 
     def _remind_players(self, db, match, msg):
         for player_id in db.predictions.getMissingPlayers(match.id()):
+            player = db.players.getPlayer(player_id)
             keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
-            keyboard.add(helpers.create_match_button(match))
+            keyboard.add(helpers.create_match_button(match, player.tz()))
             try:
                 bot.send_message(
                     player_id,
