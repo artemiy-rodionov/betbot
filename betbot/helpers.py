@@ -8,6 +8,7 @@ import telebot
 from .messages import *
 from . import messages, utils
 
+logger = logging.getLogger(__name__)
 MSK_TZ = pytz.timezone('Europe/Moscow')
 MATCHES_PER_PAGE = 8
 
@@ -112,7 +113,7 @@ def create_matches_page(db, page_idx, player, matches_per_page=MATCHES_PER_PAGE)
     page_idx = min(page_idx, pages_number - 1)
     first_match_ix = page_idx * matches_per_page
     last_match_ix = (page_idx + 1) * matches_per_page
-    logging.debug(
+    logger.debug(
         f'Matches: {len(matches)};indexes for page: {first_match_ix}:{last_match_ix}'
         f'Pages: {pages_number}; Current page: {page_idx+1}'
     )
@@ -146,3 +147,8 @@ def create_matches_page(db, page_idx, player, matches_per_page=MATCHES_PER_PAGE)
         keyboard.row(*navs)
     title = messages.CHOOSE_MATCH_TITLE
     return (title, keyboard)
+
+
+def send_markdown(bot, message, text, **kwargs):
+    logger.info(text)
+    bot.send_message(message.chat.id, text, parse_mode='Markdown', **kwargs)

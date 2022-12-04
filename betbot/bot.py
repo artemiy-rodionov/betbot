@@ -5,6 +5,7 @@ Created on Sat Jun 04 12:05:50 2016
 @author: SSundukov
 """
 from functools import cached_property
+import os.path
 import json
 import logging
 import re
@@ -72,12 +73,20 @@ class DbHelper:
 db_helper = DbHelper()
 
 
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    text = messages.HELP_MSG % RESULTS_URL
+    if db_helper.is_admin(message.from_user):
+        text += '\n' + messages.ADMIN_HELP_MSG
+    helpers.send_markdown(bot, message, text)
+
+
 @bot.message_handler(commands=['scores'])
 def scores(message):
     helpers.send_scores(bot, db_helper.get_db(), config, reply_message=message)
 
 
-@bot.message_handler(commands=['send_last'], func=lambda m: db_helper.is_admin(m.from_user))
+@bot.message_handler(commands=['sendLast'], func=lambda m: db_helper.is_admin(m.from_user))
 def send_last(message):
     for m in db_helper.get_db().matches.getMatchesBefore(utils.utcnow()):
         if m.is_finished():
@@ -86,7 +95,7 @@ def send_last(message):
 
 
 @bot.message_handler(
-    commands=['final_scores'], func=lambda m: db_helper.is_admin(m.from_user)
+    commands=['finalScores'], func=lambda m: db_helper.is_admin(m.from_user)
 )
 def send_final_scores(message):
     reply_message = message
@@ -134,10 +143,12 @@ def send_final_scores(message):
 
 
 @bot.message_handler(
-    commands=['chart_race'], func=lambda m: db_helper.is_admin(m.from_user)
+    commands=['chartRace'], func=lambda m: db_helper.is_admin(m.from_user)
 )
 def send_chart_race(message):
     fpath = conf.get_chart_race_file(config)
+    if not os.path.exists(fpath):
+        return bot.send_message(message.chat.id, messages.FAILURE)
     with open(fpath, 'rb') as fp:
         video_data = fp.read()
     group_id = message.chat.id
@@ -162,7 +173,7 @@ def on_not_private(message):
 
 
 @bot.message_handler(
-    commands=['register_admin'], func=lambda m: db_helper.is_admin(m.from_user)
+    commands=['registerAdmin'], func=lambda m: db_helper.is_admin(m.from_user)
 )
 def register_admin(message):
     user = message.from_user
@@ -209,23 +220,22 @@ def register(message):
     )
 
 
-@bot.message_handler(commands=['make_queen'], func=lambda m: db_helper.is_admin(m.from_user))
+@bot.message_handler(commands=['makeQueen'], func=lambda m: db_helper.is_admin(m.from_user))
 def make_queen(message):
     helpers.change_queen(bot, db_helper, message, True)
 
 
-@bot.message_handler(commands=['unmake_queen'], func=lambda m: db_helper.is_admin(m.from_user))
+@bot.message_handler(commands=['unmakeQueen'], func=lambda m: db_helper.is_admin(m.from_user))
 def unmake_queen(message):
-    helpers.change_queen(message, False)
+    helpers.change_queen(bot, db_helper, message, False)
 
 
 @bot.message_handler(
-    commands=['update_fixtures'], func=lambda m: db_helper.is_admin(m.from_user)
+    commands=['updateFixtures'], func=lambda m: db_helper.is_admin(m.from_user)
 )
 def cmd_update_fixtures(message):
     commands.update_fixtures()
-    msg = str(db_helper.get_db().matches)
-    bot.send_message(message.chat.id, msg)
+    bot.send_message(message.chat.id, 'Success')
 
 
 @bot.message_handler(func=lambda m: not db_helper.is_registered(m.from_user))
