@@ -79,7 +79,7 @@ def help_command(message):
     helpers.send_markdown(bot, message, text)
 
 
-@bot.message_handler(commands=['timezone'])
+@bot.message_handler(commands=['timezone'], func=lambda m: m.chat.type == 'private')
 def set_tz_command(message):
     player = db_helper.get_player(message.from_user)
     if not player:
