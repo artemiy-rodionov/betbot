@@ -122,6 +122,8 @@ def convert_api_v3(config, data):
             knockout_matches[fix_round].append(match)
         else:
             continue
+        if not match['finished']:
+            match['winner'] = None
     converted = {}
     converted['teams'] = teams.values()
     converted['groups'] = {
