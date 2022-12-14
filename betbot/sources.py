@@ -108,6 +108,7 @@ def convert_api_v3(config, data):
             '8th Finals',
             'Quarter-finals',
             'Semi-finals',
+            '3rd Place Final',
             'Final'
         ):
             match['is_playoff'] = True

@@ -268,7 +268,7 @@ class Match(object):
         'Round of 16': u'⅛',
         'Quarter-finals': u'¼',
         'Semi-finals': u'½',
-        'Third place play-off': BRONZE_MEDAL,
+        '3rd Place Final': BRONZE_MEDAL,
         'Final': CUP
     }
 

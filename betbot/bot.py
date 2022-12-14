@@ -255,6 +255,7 @@ def unmake_queen(message):
 )
 def cmd_update_fixtures(message):
     commands.update_fixtures()
+    UpdateJob.init_update_job()
     bot.send_message(message.chat.id, 'Success')
 
 
@@ -422,6 +423,7 @@ class UpdateJob:
 
         unow = utils.utcnow()
         cls.MATCHES_TO_NOTIFY = {m.id() for m in db.matches.getMatchesAfter(unow)}
+        logger.info(f'Found matches to notify: {cls.MATCHES_TO_NOTIFY}')
         cls.MATCHES_IN_PROGRESS = {
             m.id() for m in db.matches.getMatchesBefore(unow)
             if not m.is_finished()
@@ -430,9 +432,11 @@ class UpdateJob:
         cls.MATCHES_TO_REMIND = {
             m.id() for m in db.matches.getMatchesAfter(unow + REMIND_BEFORE)
         }
+        logger.info(f'Found matches to remind: {cls.MATCHES_TO_REMIND}')
         cls.MATCHES_DAY_TO_REMIND = {
             m.id() for m in db.matches.getMatchesAfter(unow + REMIND_DAY_BEFORE)
         }
+        logger.info(f'Found matches day to remind: {cls.MATCHES_DAY_TO_REMIND}')
 
     def _remind_players(self, db, match, msg):
         for player_id in db.predictions.getMissingPlayers(match.id()):
