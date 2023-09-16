@@ -79,6 +79,29 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None):
         reply_markup=keyboard,
     )
 
+def send_standings(bot, db, config, reply_message=None):
+    text = f'\nТаблица Чемпионата: \n'
+    if not db.standings:
+        text += 'Таблица пока не загружена'
+
+    else:
+        text += '\n```\n'
+        standings = db.standings.get_standings()
+        for team in standings:
+            text += f'{team["rank"]}. {team["team"]["name"]} - {team["points"]} ({team["form"]})'
+            text += '\n'
+        text += '\n```\n'
+        text += f'Последнее обновление: {standings[0]["update"]}'
+    group_id = config['group_id']
+    if reply_message is not None:
+        group_id = reply_message.chat.id
+    bot.send_message(
+        group_id,
+        text,
+        reply_to_message_id=reply_message.message_id if reply_message else None,
+        parse_mode='Markdown',
+    )
+
 
 def send_match_predictions(bot, db, config, match):
     keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)

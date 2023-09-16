@@ -14,11 +14,11 @@ def fifa_worldcup():
     return resp.json()
 
 
-def api_football(config):
+def api_football(config, resource_url):
     league_id = config['league_id']
     season = config.get('season')
 
-    url = 'https://api-football-v1.p.rapidapi.com/v3/fixtures'
+    url = f'https://api-football-v1.p.rapidapi.com/v3/{resource_url}'
 
     headers = {
         'X-RapidAPI-Key': config['api_token'],
@@ -143,15 +143,30 @@ def convert_api_v3(config, data):
 
 
 def load_fixtures(config):
-    data_fpath = conf.get_data_file(config)
+    data_fpath = conf.get_data_file(config, 'fixtures')
     with open(data_fpath) as fp:
         season_data = json.load(fp)
     return convert_api_v3(config, season_data)
 
 
 def save_fixtures(config):
-    data = api_football(config)
-    data_fpath = conf.get_data_file(config)
+    data = api_football(config, 'fixtures')
+    data_fpath = conf.get_data_file(config, 'fixtures')
     logging.info(f'Saving fixtures to {data_fpath}')
+    with open(data_fpath, 'w') as fp:
+        json.dump(data, fp)
+
+
+def load_standings(config):
+    data_fpath = conf.get_data_file(config, 'standings')
+    with open(data_fpath) as fp:
+        data = json.load(fp)
+    return data[0]['league']['standings'][0]
+
+
+def save_standings(config):
+    data = api_football(config, 'standings')
+    data_fpath = conf.get_data_file(config, 'standings')
+    logging.info(f'Saving standings to {data_fpath}')
     with open(data_fpath, 'w') as fp:
         json.dump(data, fp)

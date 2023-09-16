@@ -106,6 +106,11 @@ def scores(message):
     helpers.send_scores(bot, db_helper.get_db(), config, reply_message=message)
 
 
+@bot.message_handler(commands=['standings'])
+def standings(message):
+    helpers.send_standings(bot, db_helper.get_db(), config, reply_message=message)
+
+
 @bot.message_handler(commands=['sendLast'], func=lambda m: db_helper.is_admin(m.from_user))
 def send_last(message):
     for m in db_helper.get_db().matches.getMatchesBefore(utils.utcnow()):
@@ -256,6 +261,15 @@ def unmake_queen(message):
 def cmd_update_fixtures(message):
     commands.update_fixtures()
     UpdateJob.init_update_job()
+    bot.send_message(message.chat.id, 'Success')
+
+
+@bot.message_handler(
+    commands=['updateStandings'], func=lambda m: db_helper.is_admin(m.from_user)
+)
+def cmd_update_fixtures(message):
+    commands.update_standings()
+    db_helper.get_db().reload_standings()
     bot.send_message(message.chat.id, 'Success')
 
 

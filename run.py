@@ -29,6 +29,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--results', help='Print results json and exit',
                         nargs='?', const=utils.utcnow(), type=date_arg)
     parser.add_argument('--update', help='Update json results and exit', action='store_true')
+    parser.add_argument('--update-standings', help='Update standings and exit', action='store_true')
     parser.add_argument('--chart-race', help='Build chart race file and exit', action='store_true')
     args = parser.parse_args(sys.argv[1:])
     if args.results:
@@ -37,6 +38,8 @@ if __name__ == '__main__':
         result = commands.dump_info()
     elif args.update:
         result = commands.update_fixtures()
+    elif args.update_standings:
+        result = commands.update_standings()
     elif args.chart_race:
         import chart_race
         chart_race.build_chart_race()

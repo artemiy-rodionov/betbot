@@ -54,6 +54,7 @@ class Database(object):
     def reload_data(self):
         self.reload_fixtures()
         self.reload_tables()
+        self.reload_standings()
 
     def reload_fixtures(self):
         matches_data = sources.load_fixtures(self.config)
@@ -63,6 +64,15 @@ class Database(object):
     def reload_tables(self):
         self.players = Players(self._db_path, self.config['admin_id'])
         self.predictions = Predictions(self._db_path, self.players, self.matches)
+
+    def reload_standings(self):
+        try:
+            standings_data = sources.load_standings(self.config)
+        except Exception:
+            logger.exception('Error loading standings')
+            self.standings = None
+            return
+        self.standings = Standings(standings_data)
 
 
 class Team(object):
@@ -632,3 +642,11 @@ class Predictions(DbTable):
                                (SELECT player_id FROM predictions WHERE match_id = ?)''',
                               (match_id,))
             return [row[0] for row in rows]
+
+
+class Standings:
+    def __init__(self, standings_data):
+        self.standings = standings_data
+
+    def get_standings(self):
+        return self.standings

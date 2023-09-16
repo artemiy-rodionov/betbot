@@ -1,11 +1,11 @@
 import os
 
 
-def get_data_file(config):
+def get_data_file(config, resource):
     lid = config['league_id']
     season = config.get('season', 'no')
     data_dir = config['data_dir']
-    return os.path.join(data_dir, f'fixtures-{lid}-{season}.json')
+    return os.path.join(data_dir, f'{resource}-{lid}-{season}.json')
 
 
 def _make_group_name(config):

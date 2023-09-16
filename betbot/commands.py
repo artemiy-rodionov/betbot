@@ -21,3 +21,8 @@ def dump_results(results_date):
 def update_fixtures():
     logging.info('Updating fixtures')
     sources.save_fixtures(config)
+
+
+def update_standings():
+    logging.info('Updating standings')
+    sources.save_standings(config)
