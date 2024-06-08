@@ -44,7 +44,7 @@ ADMIN_HELP_MSG = (
     '/sendLast - отправить ставки в группу по последним матчам\n'
 )
 
-TIMEZONE_MSG = 'Текущий часовой пояс {tz}'
+TIMEZONE_MSG = 'Текущий часовой пояс "{tz}"'
 TIMEZONE_HELP_MSG = (
     'Вводи команду в формате "/timezone <имя часового пояса>"\n'
     'Часовые пояса можно найти по [ссылке](https://timezonedb.com/time-zones)'

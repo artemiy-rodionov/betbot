@@ -96,8 +96,10 @@ def set_tz_command(message):
             pid = player.id()
             db_helper.get_db().players.changeTz(pid, tz.zone)
             player = db_helper.get_player(message.from_user)
-    text = messages.TIMEZONE_MSG.format(tz=player.tz().zone)
+    zone = player.tz().zone
+    text = messages.TIMEZONE_MSG.format(tz=zone.replace('_',' '))
     text += '\n\n' + messages.TIMEZONE_HELP_MSG + error_msg
+    logging.debug('Timezone text', text)
     helpers.send_markdown(bot, message, text)
 
 
