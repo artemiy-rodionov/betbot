@@ -54,7 +54,7 @@ def build_chart_race():
         filename=chart_race_fpath,
         # steps_per_period=10,
         interpolate_period=True,
-        period_length=700,
+        period_length=400,
         period_fmt='Номер матча - {x:.0f}',
     )
     return gr

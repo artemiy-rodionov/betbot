@@ -592,6 +592,34 @@
             "flag": {
                 "unicode": "\ud83c\uddee\ud83c\uddf7"
             }
+        },
+        {
+            "id": "ROU",
+            "name": "Romania",
+            "flag": {
+                "unicode": "\ud83c\uddf7\ud83c\uddf4"
+            }
+        },
+        {
+            "id": "SVN",
+            "name": "Slovenia",
+            "flag": {
+                "unicode": "\ud83c\uddf8\ud83c\uddee"
+            }
+        },
+        {
+            "id": "ALB",
+            "name": "Albania",
+            "flag": {
+                "unicode": "\ud83c\udde6\ud83c\uddf1"
+            }
+        },
+        {
+            "id": "GEO",
+            "name": "Georgia",
+            "flag": {
+                "unicode": "\ud83c\uddec\ud83c\uddea"
+            }
         }
     ]
 }

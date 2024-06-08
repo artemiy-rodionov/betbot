@@ -54,7 +54,6 @@ class Database(object):
     def reload_data(self):
         self.reload_fixtures()
         self.reload_tables()
-        self.reload_standings()
 
     def reload_fixtures(self):
         matches_data = sources.load_fixtures(self.config)
