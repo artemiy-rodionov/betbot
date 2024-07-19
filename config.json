@@ -9,8 +9,12 @@
  "group_id": <telegram-group-id-int>,
  "results_url": "<RESULTS URL>",
  "api_token": "<api-football-token>",
- // 0 -disabled, 1-penalty, 2-extra
- "extra_score": 0,
+ # default or extratime count
+ "extra_score_mode": "default",
+ # fsnorm or default score alg
+ "score_mode": "default",
+ # send fixture events
+ "events_enabled": false,
  "league_id": <api-football-league-id>,
  "season": <api-footbal-season>
 }
