@@ -700,20 +700,17 @@ class Predictions(DbTable):
                     prediction_info["is_extra_score"] = pl_result.is_extra_score(p)
                 results["players"][player_id]["predictions"].append(prediction_info)
         for player in players:
-            score = round(
-                sum(
-                    0 if s["score"] is None else s["score"]
-                    for s in results["players"][player.id()]["predictions"]
-                ),
-                2,
+            score = sum(
+                0 if s["score"] is None else s["score"]
+                for s in results["players"][player.id()]["predictions"]
             )
-            exact_score = round(
-                sum(
-                    1 if s["is_exact_score"] else 0
-                    for s in results["players"][player.id()]["predictions"]
-                ),
-                2,
+            exact_score = sum(
+                1 if s["is_exact_score"] else 0
+                for s in results["players"][player.id()]["predictions"]
             )
+            if SCORE_MODE == "fsnorm":
+                score = round(score, 2)
+                exact_score = round(exact_score, 2)
             results["players"][player.id()]["name"] = player.name()
             results["players"][player.id()]["score"] = score
             results["players"][player.id()]["exact_score"] = exact_score

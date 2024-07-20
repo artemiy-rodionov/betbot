@@ -43,12 +43,13 @@ def create_match_button(match, tz, prediction=None):
 
 
 def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_playoff=False):
+    logger.info('Send scores for matches %s, playoff: %s', finished_matches, is_playoff)
     extra_msg = ""
     finished_matches_ids = set()
     if finished_matches is not None:
         extra_msg = "Результаты матчей:\n"
         for m in finished_matches:
-            if is_playoff and not m.is_playoff:
+            if is_playoff and not m.is_playoff():
                 continue
             extra_msg += f"{m.label(m.result(), True)}\n"
             finished_matches_ids.add(int(m.id()))
@@ -57,23 +58,25 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_p
 
     text = f"{extra_msg}\n"
     if is_playoff:
-        text = f"Таблица Плей-офф: \n"
+        text += f"Таблица Плей-офф: \n"
     else:
-        text = f"Таблица: \n"
+        text += f"Таблица: \n"
     text += "\n```\n"
     for idx, player in enumerate(results["players"].values()):
         is_queen = " ♛ " if player["is_queen"] else " "
         text += f'{idx+1}. {player["name"]}{is_queen}- {player["score"]}'
         if finished_matches:
-            matches_score = round(
-                sum(
-                    0 if pr["score"] is None else pr["score"]
-                    for pr in player["predictions"]
-                    if int(pr["match_id"]) in finished_matches_ids
-                ),
-                2,
+            matches_score = sum(
+                0 if pr["score"] is None else pr["score"]
+                for pr in player["predictions"]
+                if int(pr["match_id"]) in finished_matches_ids
             )
-            text += f" (+{matches_score:.2f})"
+            SCORE_MODE = config["score_mode"]
+            if SCORE_MODE == "fsnorm":
+                matches_score = round(matches_score, 2)
+                text += f" (+{matches_score:.2f})"
+            else:
+                text += f" (+{matches_score})"
         text += "\n"
     text += "\n```\n"
     group_id = config["group_id"]

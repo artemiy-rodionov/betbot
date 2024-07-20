@@ -34,6 +34,7 @@ REMIND_DAY_BEFORE = datetime.timedelta(hours=24)
 RESULTS_URL = config["results_url"]
 EXTRA_SCORE_MODE = config["extra_score_mode"]
 EVENTS_ENABLED = config.get("events_enabled", False)
+PLAYOFF_TABLE_ENABLED = config.get("playoff_table_enabled", False)
 
 bot = telebot.TeleBot(config["token"])
 
@@ -572,14 +573,14 @@ class UpdateJob:
                 except Exception:
                     logger.exception("Error sending fixture events")
             if m.is_finished():
-                if m.is_playoff:
-                    finished_playoff_matches.append(m)
                 finished_matches.append(m)
+                if m.is_playoff():
+                    finished_playoff_matches.append(m)
         self.MATCHES_IN_PROGRESS -= {m.id() for m in finished_matches}
         if finished_matches:
             helpers.send_scores(bot, db, config, finished_matches=finished_matches)
-        if finished_playoff_matches:
-            helpers.send_scores(bot, db, config, finished_matches=finished_matches, is_playoff=True)
+        if PLAYOFF_TABLE_ENABLED and finished_playoff_matches:
+            helpers.send_scores(bot, db, config, finished_matches=finished_playoff_matches, is_playoff=True)
         logger.info("update finished")
 
     def __call__(self):

@@ -15,6 +15,8 @@
  "score_mode": "default",
  # send fixture events
  "events_enabled": false,
+ # send playoff table
+ "playoff_table_enabled": false,
  "league_id": <api-football-league-id>,
  "season": <api-footbal-season>
 }
