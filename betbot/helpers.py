@@ -76,9 +76,9 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_p
         new_rank = idx + 1
         old_rank = player_positions_before[player["id"]]
         rank_diff = abs(new_rank - old_rank)
-        if new_rank > old_rank:
+        if new_rank < old_rank:
             rank_emoji = "↑"
-        elif new_rank < old_rank:
+        elif new_rank > old_rank:
             rank_emoji = "↓"
         else:
             rank_emoji = "→"
