@@ -55,6 +55,15 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_p
             finished_matches_ids.add(int(m.id()))
     unow = utils.utcnow()
     results = db.predictions.genResults(unow, is_playoff=is_playoff)
+    if finished_matches_ids:
+        results_before_finished = db.predictions.genResults(unow, is_playoff=is_playoff,
+                                                        exclude_match_ids=finished_matches_ids)
+    else:
+        results_before_finished = results
+    player_positions_before = {
+        player["id"]: idx+1
+        for idx, player in enumerate(results_before_finished["players"].values())
+    }
 
     text = f"{extra_msg}\n"
     if is_playoff:
@@ -64,7 +73,19 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_p
     text += "\n```\n"
     for idx, player in enumerate(results["players"].values()):
         is_queen = " ♛ " if player["is_queen"] else " "
-        text += f'{idx+1}. {player["name"]}{is_queen}- {player["score"]}'
+        new_rank = idx + 1
+        old_rank = player_positions_before[player["id"]]
+        rank_diff = abs(new_rank - old_rank)
+        if new_rank > old_rank:
+            rank_emoji = "↑"
+        elif new_rank < old_rank:
+            rank_emoji = "↓"
+        else:
+            rank_emoji = "→"
+        rank_part = f"{rank_emoji}{rank_diff}"
+
+
+        text += f'{new_rank}. {player["name"]}{is_queen}- {player["score"]}'
         if finished_matches:
             matches_score = sum(
                 0 if pr["score"] is None else pr["score"]
@@ -74,9 +95,9 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_p
             SCORE_MODE = config["score_mode"]
             if SCORE_MODE == "fsnorm":
                 matches_score = round(matches_score, 2)
-                text += f" (+{matches_score:.2f})"
+                text += f" (+{matches_score:.2f}) | {rank_part}"
             else:
-                text += f" (+{matches_score})"
+                text += f" (+{matches_score} | {rank_part})"
         text += "\n"
     text += "\n```\n"
     group_id = config["group_id"]

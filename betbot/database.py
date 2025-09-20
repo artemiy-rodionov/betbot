@@ -639,9 +639,12 @@ class Predictions(DbTable):
         )
         return predictions
 
-    def genResults(self, now, verbose=False, is_playoff=False):
+    def genResults(self, now, verbose=False, is_playoff=False, exclude_match_ids=None):
         players = self.players.getAllPlayers()
-        matches = self.matches.getMatchesBefore(now)
+        all_matches = self.matches.getMatchesBefore(now)
+        if exclude_match_ids is None:
+            exclude_match_ids = []
+        matches = [m for m in all_matches if m.id() not in exclude_match_ids]
         predictions = defaultdict(lambda: defaultdict(lambda: None))
         with self.db() as db:
             for row in db.execute(
@@ -711,6 +714,7 @@ class Predictions(DbTable):
             if SCORE_MODE == "fsnorm":
                 score = round(score, 2)
                 exact_score = round(exact_score, 2)
+            results["players"][player.id()]["id"] = player.id()
             results["players"][player.id()]["name"] = player.name()
             results["players"][player.id()]["score"] = score
             results["players"][player.id()]["exact_score"] = exact_score
