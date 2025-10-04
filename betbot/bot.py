@@ -4,6 +4,7 @@ Created on Sat Jun 04 12:05:50 2016
 
 @author: SSundukov
 """
+
 from collections import defaultdict
 from functools import cached_property
 import os.path
@@ -36,6 +37,10 @@ EXTRA_SCORE_MODE = config["extra_score_mode"]
 EVENTS_ENABLED = config.get("events_enabled", False)
 PLAYOFF_TABLE_ENABLED = config.get("playoff_table_enabled", False)
 
+# Special bot IDs - using very large negative numbers to avoid Telegram ID conflicts
+# Telegram user IDs are positive integers, so negative numbers are safe
+BOT_ID_ONE_ZERO = -999999999  # The 1-0 betting bot
+
 bot = telebot.TeleBot(config["token"])
 
 
@@ -60,8 +65,20 @@ class DbHelper:
         assert not self.is_registered(user)
         logger.info(f"Register player {user}")
         return self.get_db().players.createPlayer(
-            user.id, user.first_name, user.last_name
+            user.id, user.first_name, user.last_name, is_bot=False
         )
+
+    def register_bot_player(self, bot_id, bot_name):
+        """Register a bot player that will automatically make 1-0 bets"""
+        assert not self.is_registered_by_id(bot_id)
+        logger.info(f"Register bot player {bot_name} with id {bot_id}")
+        return self.get_db().players.createPlayer(
+            bot_id, bot_name, "Bot", is_queen=False, is_bot=True
+        )
+
+    def is_registered_by_id(self, user_id):
+        """Check if a user is registered by ID"""
+        return self.get_db().players.isRegistered(user_id)
 
     def get_player(self, user):
         assert self.is_registered(user)
@@ -72,6 +89,47 @@ class DbHelper:
 
     def is_admin(self, user):
         return self.get_db().players.isAdmin(user.id)
+
+
+def make_automatic_bot_bets():
+    """Make automatic 1-0 bets for all bot players on all matches"""
+    try:
+        db = db_helper.get_db()
+        bot_players = db.players.getBotPlayers()
+
+        if not bot_players:
+            return
+
+        unow = utils.utcnow()
+        # Get ALL matches (both past and future)
+        all_matches = list(db.matches.matches.values())
+
+        bets_made = 0
+        for bot_player in bot_players:
+            # Get existing predictions once per bot player for efficiency
+            existing_predictions = db.predictions.getForPlayer(bot_player)
+            existing_match_ids = {m.id() for m, r in existing_predictions}
+
+            for match in all_matches:
+                if match.id() not in existing_match_ids:
+                    # Create 1-0 result (team 1 wins 1-0)
+                    result = database.Result(1, 0)
+
+                    # Add the prediction
+                    db.predictions.addPrediction(bot_player, match, result, unow)
+                    bets_made += 1
+                    logger.info(
+                        f"Bot player {bot_player.name()} (ID: {bot_player.id()}) "
+                        f"made automatic 1-0 bet on match {match.id()}: {match.label(result)}"
+                    )
+
+        if bets_made > 0:
+            logger.info(
+                f"Made {bets_made} automatic 1-0 bets for {len(bot_players)} bot players on all matches"
+            )
+
+    except Exception as e:
+        logger.error(f"Error making automatic bot bets: {e}")
 
 
 db_helper = DbHelper()
@@ -116,7 +174,9 @@ def scores(message):
 
 @bot.message_handler(commands=["playoffScores"])
 def playoff_scores(message):
-    helpers.send_scores(bot, db_helper.get_db(), config, reply_message=message, is_playoff=True)
+    helpers.send_scores(
+        bot, db_helper.get_db(), config, reply_message=message, is_playoff=True
+    )
 
 
 @bot.message_handler(commands=["standings"])
@@ -219,7 +279,7 @@ def send_chart_race(message):
 @bot.message_handler(commands=["bet"], func=lambda m: m.chat.type != "private")
 def bet_cmd_public_err(message):
     cfg = config
-    msg = f'{messages.SEND_PRIVATE_MSG} {cfg["bot_name"]}'
+    msg = f"{messages.SEND_PRIVATE_MSG} {cfg['bot_name']}"
     bot.send_message(message.chat.id, msg, reply_to_message_id=message.message_id)
 
 
@@ -296,6 +356,100 @@ def unmake_queen(message):
 
 
 @bot.message_handler(
+    commands=["registerBot"], func=lambda m: db_helper.is_admin(m.from_user)
+)
+def register_bot(message):
+    """Register the 1-0 betting bot (only one allowed)"""
+    # Check if 1-0 bot already exists
+    if db_helper.is_registered_by_id(BOT_ID_ONE_ZERO):
+        existing_bot = db_helper.get_db().players.getPlayer(BOT_ID_ONE_ZERO)
+        bot.send_message(
+            message.chat.id,
+            f"❌ 1-0 betting bot already exists: '{existing_bot.name()}' (ID: {existing_bot.id()})\n"
+            f"Use /listBots to see existing bots.",
+        )
+        return
+
+    # Parse the command to get bot name (optional)
+    msg_parts = message.text.split(maxsplit=1)
+    bot_name = msg_parts[1].strip() if len(msg_parts) > 1 else "OneZero"
+    
+    if not bot_name:
+        bot_name = "OneZero"
+
+    try:
+        bot_player = db_helper.register_bot_player(BOT_ID_ONE_ZERO, bot_name)
+        bot.send_message(
+            message.chat.id,
+            f"✅ 1-0 betting bot '{bot_player.name()}' (ID: {bot_player.id()}) registered successfully!\n"
+            f"This bot will automatically make 1-0 predictions on ALL matches.\n"
+            f"Only one 1-0 bot is allowed in the system.",
+        )
+        logger.info(f"1-0 bot player {bot_name} registered with ID {BOT_ID_ONE_ZERO}")
+    except Exception as e:
+        bot.send_message(
+            message.chat.id, f"❌ Failed to register 1-0 bot player: {str(e)}"
+        )
+        logger.error(f"Failed to register 1-0 bot player {bot_name}: {e}")
+
+
+@bot.message_handler(
+    commands=["listBots"], func=lambda m: db_helper.is_admin(m.from_user)
+)
+def list_bots(message):
+    """List all registered bot players"""
+    try:
+        db = db_helper.get_db()
+        bot_players = db.players.getBotPlayers()
+
+        if not bot_players:
+            bot.send_message(message.chat.id, "❌ No bot players registered")
+            return
+
+        lines = ["🤖 **Registered Bot Players:**"]
+        for bot_player in bot_players:
+            lines.append(f"• {bot_player.name()} (ID: {bot_player.id()})")
+
+        bot.send_message(message.chat.id, "\n".join(lines), parse_mode="Markdown")
+
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Error listing bot players: {str(e)}")
+        logger.error(f"Error listing bot players: {e}")
+
+
+@bot.message_handler(
+    commands=["removeBot"], func=lambda m: db_helper.is_admin(m.from_user)
+)
+def remove_bot(message):
+    """Remove the 1-0 betting bot"""
+    try:
+        if not db_helper.is_registered_by_id(BOT_ID_ONE_ZERO):
+            bot.send_message(message.chat.id, "❌ No 1-0 betting bot is registered")
+            return
+
+        # Get bot info before removal
+        existing_bot = db_helper.get_db().players.getPlayer(BOT_ID_ONE_ZERO)
+        bot_name = existing_bot.name()
+
+        # Remove bot from database
+        with db_helper.get_db().players.db() as db:
+            db.execute("DELETE FROM players WHERE id=?", (BOT_ID_ONE_ZERO,))
+            # Also remove all predictions made by this bot
+            db.execute("DELETE FROM predictions WHERE player_id=?", (BOT_ID_ONE_ZERO,))
+
+        bot.send_message(
+            message.chat.id,
+            f"✅ 1-0 betting bot '{bot_name}' (ID: {BOT_ID_ONE_ZERO}) removed successfully!\n"
+            f"All predictions made by this bot have also been deleted.",
+        )
+        logger.info(f"1-0 bot player {bot_name} removed with ID {BOT_ID_ONE_ZERO}")
+
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Error removing bot player: {str(e)}")
+        logger.error(f"Error removing bot player: {e}")
+
+
+@bot.message_handler(
     commands=["updateFixtures"], func=lambda m: db_helper.is_admin(m.from_user)
 )
 def cmd_update_fixtures(message):
@@ -307,7 +461,7 @@ def cmd_update_fixtures(message):
 @bot.message_handler(
     commands=["updateStandings"], func=lambda m: db_helper.is_admin(m.from_user)
 )
-def cmd_update_fixtures(message):
+def cmd_update_standings(message):
     commands.update_standings()
     db_helper.get_db().reload_standings()
     bot.send_message(message.chat.id, "Success")
@@ -535,12 +689,15 @@ class UpdateJob:
         db_helper.reload_db()
         db = db_helper.get_db()
 
+        # Make automatic bets for bot players
+        make_automatic_bot_bets()
+
         last_update = utils.utcnow()
         results = db.predictions.genResults(last_update)
         results_fpath = conf.get_results_file(config)
         with open(results_fpath, "w") as fp:
             json.dump(results, fp)
-            logger.info("Results file dumped")
+            logger.info(f"Results file dumped to: {results_fpath}")
 
         for m in db.matches.getMatchesBefore(last_update):
             mid = m.id()
@@ -580,7 +737,13 @@ class UpdateJob:
         if finished_matches:
             helpers.send_scores(bot, db, config, finished_matches=finished_matches)
         if PLAYOFF_TABLE_ENABLED and finished_playoff_matches:
-            helpers.send_scores(bot, db, config, finished_matches=finished_playoff_matches, is_playoff=True)
+            helpers.send_scores(
+                bot,
+                db,
+                config,
+                finished_matches=finished_playoff_matches,
+                is_playoff=True,
+            )
         logger.info("update finished")
 
     def __call__(self):

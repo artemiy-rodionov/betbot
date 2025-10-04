@@ -1,9 +1,8 @@
-
 from dynaconf import Dynaconf
 
 config = Dynaconf(
     envvar_prefix="DYNACONF",
-    settings_files=['instance/settings.json'],
+    settings_files=["instance/settings.json"],
     auto_cast=False,
 )
 

@@ -4,7 +4,6 @@ from collections import defaultdict
 
 import telebot
 
-from .messages import *
 from . import messages, utils
 
 logger = logging.getLogger(__name__)
@@ -42,8 +41,10 @@ def create_match_button(match, tz, prediction=None):
     )
 
 
-def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_playoff=False):
-    logger.info('Send scores for matches %s, playoff: %s', finished_matches, is_playoff)
+def send_scores(
+    bot, db, config, reply_message=None, finished_matches=None, is_playoff=False
+):
+    logger.info("Send scores for matches %s, playoff: %s", finished_matches, is_playoff)
     extra_msg = ""
     finished_matches_ids = set()
     if finished_matches is not None:
@@ -56,20 +57,21 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_p
     unow = utils.utcnow()
     results = db.predictions.genResults(unow, is_playoff=is_playoff)
     if finished_matches_ids:
-        results_before_finished = db.predictions.genResults(unow, is_playoff=is_playoff,
-                                                        exclude_match_ids=finished_matches_ids)
+        results_before_finished = db.predictions.genResults(
+            unow, is_playoff=is_playoff, exclude_match_ids=finished_matches_ids
+        )
     else:
         results_before_finished = results
     player_positions_before = {
-        player["id"]: idx+1
+        player["id"]: idx + 1
         for idx, player in enumerate(results_before_finished["players"].values())
     }
 
     text = f"{extra_msg}\n"
     if is_playoff:
-        text += f"Таблица Плей-офф: \n"
+        text += "Таблица Плей-офф: \n"
     else:
-        text += f"Таблица: \n"
+        text += "Таблица: \n"
     text += "\n```\n"
     for idx, player in enumerate(results["players"].values()):
         is_queen = " ♛ " if player["is_queen"] else " "
@@ -84,8 +86,7 @@ def send_scores(bot, db, config, reply_message=None, finished_matches=None, is_p
             rank_emoji = "→"
         rank_part = f"{rank_emoji}{rank_diff}"
 
-
-        text += f'{new_rank}. {player["name"]}{is_queen}- {player["score"]}'
+        text += f"{new_rank}. {player['name']}{is_queen}- {player['score']}"
         if finished_matches:
             matches_score = sum(
                 0 if pr["score"] is None else pr["score"]
@@ -123,7 +124,7 @@ def send_match_event(bot, db, config, match, event):
     detail = event["detail"]
     team = db.teams.get_team(event["team"]["id"])
     time = f"{event['time']['elapsed']}"
-    if event['time']['extra'] is not None:
+    if event["time"]["extra"] is not None:
         time += f"+{event['time']['extra']}"
     time += "'"
     if ev_type == "Goal":
@@ -142,9 +143,7 @@ def send_match_event(bot, db, config, match, event):
     elif ev_type == "Var":
         text = f"📺 {time}: {event['detail']} - {team.label()}"
     elif ev_type == "Card" and detail == "Red card":
-        text = (
-            f"🟥 {time}: {event['player']['name']} - {team.label()}"
-        )
+        text = f"🟥 {time}: {event['player']['name']} - {team.label()}"
     else:
         return
 
@@ -164,10 +163,10 @@ def send_standings(bot, db, config, reply_message=None):
         text += "\n```\n"
         standings = db.standings.get_standings()
         for team in standings:
-            text += f'{team["rank"]}. {team["team"]["name"]} - {team["points"]} ({team["form"]})'
+            text += f"{team['rank']}. {team['team']['name']} - {team['points']} ({team['form']})"
             text += "\n"
         text += "\n```\n"
-        text += f'Последнее обновление: {standings[0]["update"]}'
+        text += f"Последнее обновление: {standings[0]['update']}"
     group_id = config["group_id"]
     if reply_message is not None:
         group_id = reply_message.chat.id
@@ -226,7 +225,7 @@ def create_matches_page(db, page_idx, player, matches_per_page=MATCHES_PER_PAGE)
     last_match_ix = (page_idx + 1) * matches_per_page
     logger.debug(
         f"Matches: {len(matches)};indexes for page: {first_match_ix}:{last_match_ix}"
-        f"Pages: {pages_number}; Current page: {page_idx+1}"
+        f"Pages: {pages_number}; Current page: {page_idx + 1}"
     )
     matches = matches[first_match_ix:last_match_ix]
     keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)

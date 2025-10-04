@@ -15,10 +15,10 @@ from . import conf
 logger = logging.getLogger(__name__)
 
 
-BLANK_FLAG = "\U0001F3F3\uFE0F"
-ZWNBSP = "\uFEFF"
-CUP = "\U0001F3C6"
-BRONZE_MEDAL = "\U0001F949"
+BLANK_FLAG = "\U0001f3f3\ufe0f"
+ZWNBSP = "\ufeff"
+CUP = "\U0001f3c6"
+BRONZE_MEDAL = "\U0001f949"
 
 SCORE_MODE = global_config["score_mode"]
 EXTRA_SCORE_MODE = global_config["extra_score_mode"]
@@ -451,12 +451,15 @@ class Matches(object):
 
 
 class Player(object):
-    def __init__(self, id, first_name, last_name, display_name, is_queen, tz):
+    def __init__(
+        self, id, first_name, last_name, display_name, is_queen, tz, is_bot=False
+    ):
         self._id = id
         self._first_name = first_name
         self._last_name = last_name
         self._display_name = display_name
         self._is_queen = is_queen
+        self._is_bot = is_bot
         if tz is None:
             self._tz = MSK_TZ
         else:
@@ -495,6 +498,9 @@ class Player(object):
     def is_queen(self):
         return self._is_queen
 
+    def is_bot(self):
+        return self._is_bot
+
     def __str__(self):
         return "%s (%d)" % (self.name(), self.id())
 
@@ -515,37 +521,54 @@ class Players(DbTable):
             db.execute(
                 """CREATE TABLE IF NOT EXISTS players
                     (id integer, first_name text, last_name text, display_name text,
-                     is_queen integer not null default 1,timezone text)"""
+                     is_queen integer not null default 1, timezone text, is_bot integer not null default 0)"""
             )
+            # Add is_bot column if it doesn't exist (for existing databases)
+            try:
+                db.execute(
+                    "ALTER TABLE players ADD COLUMN is_bot integer not null default 0"
+                )
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
     def getPlayer(self, pid):
         with self.db() as db:
             res = db.execute(
-                """SELECT first_name, last_name, display_name, is_queen, timezone FROM players WHERE id=?""",
+                """SELECT first_name, last_name, display_name, is_queen, timezone, is_bot FROM players WHERE id=?""",
                 (pid,),
             ).fetchone()
         if res is None:
             return None
-        return Player(pid, res[0], res[1], res[2], bool(res[3]), tz=res[4])
+        return Player(
+            pid, res[0], res[1], res[2], bool(res[3]), tz=res[4], is_bot=bool(res[5])
+        )
 
     def getAllPlayers(self):
         players = []
         with self.db() as db:
             for row in db.execute(
-                """SELECT first_name, last_name, display_name, is_queen, id, timezone FROM players"""
+                """SELECT first_name, last_name, display_name, is_queen, id, timezone, is_bot FROM players"""
             ):
                 pid = int(row[4])
                 players.append(
-                    Player(pid, row[0], row[1], row[2], bool(row[3]), tz=row[5])
+                    Player(
+                        pid,
+                        row[0],
+                        row[1],
+                        row[2],
+                        bool(row[3]),
+                        tz=row[5],
+                        is_bot=bool(row[6]),
+                    )
                 )
         return players
 
-    def createPlayer(self, pid, first_name, last_name, is_queen=False):
+    def createPlayer(self, pid, first_name, last_name, is_queen=False, is_bot=False):
         with self.db() as db:
             db.execute(
-                """INSERT INTO players (id, first_name, last_name, display_name, is_queen)
-                    VALUES (?,?,?,?,?)""",
-                (pid, first_name, last_name, None, int(is_queen)),
+                """INSERT INTO players (id, first_name, last_name, display_name, is_queen, is_bot)
+                    VALUES (?,?,?,?,?,?)""",
+                (pid, first_name, last_name, None, int(is_queen), int(is_bot)),
             )
         return self.getPlayer(pid)
 
@@ -566,6 +589,28 @@ class Players(DbTable):
         assert pytz.timezone(tz)
         with self.db() as db:
             db.execute("""UPDATE players SET timezone=? WHERE id=?""", (tz, pid))
+
+    def getBotPlayers(self):
+        """Get all bot players"""
+        bot_players = []
+        with self.db() as db:
+            for row in db.execute(
+                """SELECT first_name, last_name, display_name, is_queen, id, timezone, is_bot
+                   FROM players WHERE is_bot=1"""
+            ):
+                pid = int(row[4])
+                bot_players.append(
+                    Player(
+                        pid,
+                        row[0],
+                        row[1],
+                        row[2],
+                        bool(row[3]),
+                        tz=row[5],
+                        is_bot=bool(row[6]),
+                    )
+                )
+        return bot_players
 
 
 class Predictions(DbTable):
@@ -697,9 +742,9 @@ class Predictions(DbTable):
                 )
                 if verbose and match.is_finished():
                     prediction_info["is_winner_score"] = pl_result.is_winner_score(p)
-                    prediction_info[
-                        "is_difference_score"
-                    ] = pl_result.is_difference_score(p)
+                    prediction_info["is_difference_score"] = (
+                        pl_result.is_difference_score(p)
+                    )
                     prediction_info["is_extra_score"] = pl_result.is_extra_score(p)
                 results["players"][player_id]["predictions"].append(prediction_info)
         for player in players:

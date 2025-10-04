@@ -5,6 +5,7 @@ class dbopen(object):
     """
     Simple CM for sqlite3 databases. Commits everything at exit.
     """
+
     def __init__(self, path):
         self.path = path
         self.conn = None

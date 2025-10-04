@@ -15,14 +15,18 @@ def dump_info():
 def dump_results(results_date):
     db = database.Database(config)
     if results_date is not None:
-        print(json.dumps(db.predictions.genResults(results_date), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                db.predictions.genResults(results_date), indent=2, sort_keys=True
+            )
+        )
 
 
 def update_fixtures():
-    logging.info('Updating fixtures')
+    logging.info("Updating fixtures")
     sources.save_fixtures(config)
 
 
 def update_standings():
-    logging.info('Updating standings')
+    logging.info("Updating standings")
     sources.save_standings(config)
