@@ -173,9 +173,11 @@
         : '<span class="rank-badge">' + r + "</span>";
       tr.appendChild(el("th", "col-rank", badge));
 
-      var nameHtml = '<span class="player-name">' + esc(p.name) +
+      var nameHtml = '<span class="player-name"><span class="pname">' + esc(p.name) + "</span>" +
         (p.is_queen ? ' <span class="queen">👑</span>' : "") + "</span>";
-      tr.appendChild(el("th", "col-player", nameHtml));
+      var nameTh = el("th", "col-player", nameHtml);
+      nameTh.title = p.name; // full name on hover/tap when truncated
+      tr.appendChild(nameTh);
       tr.appendChild(el("td", "col-pts", fmtPts(p.score)));
       tr.appendChild(el("td", "col-exact", p.exact ? String(p.exact) : "·"));
 
@@ -242,10 +244,12 @@
 
     applyStickyOffsets(table);
 
-    // first load: jump to latest match; view change: back to start; else keep position
-    box.scrollLeft = SCROLL_MODE === "end" ? box.scrollWidth
-                   : SCROLL_MODE === "start" ? 0
-                   : prevLeft;
+    // first load: desktop jumps to latest match, phones start at the standings;
+    // view change: back to start; otherwise keep current position.
+    var isMobile = typeof window.matchMedia === "function" &&
+                   window.matchMedia("(max-width: 640px)").matches;
+    var mode = (SCROLL_MODE === "end" && isMobile) ? "start" : SCROLL_MODE;
+    box.scrollLeft = mode === "end" ? box.scrollWidth : mode === "start" ? 0 : prevLeft;
     SCROLL_MODE = "keep";
   }
 
