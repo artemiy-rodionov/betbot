@@ -3,6 +3,7 @@
 *.pyc
 instance/
 html/results.json
+html
 
 # Ignore dynaconf secret files
 .secrets.*

@@ -1,5 +1,6 @@
 import logging
 import math
+import re
 from collections import defaultdict
 
 import telebot
@@ -8,6 +9,22 @@ from . import messages, utils
 
 logger = logging.getLogger(__name__)
 MATCHES_PER_PAGE = 8
+MAX_NAME_LEN = 64
+
+
+def clean_display_name(raw):
+    """Validate/sanitize a user-supplied display name.
+
+    Returns (name, error_message). On success error_message is None.
+    """
+    name = " ".join((raw or "").split())
+    # Strip Markdown control chars so names can't break parse_mode="Markdown".
+    name = re.sub(r"[*_`\[\]]", "", name).strip()
+    if not name:
+        return None, messages.NAME_EMPTY
+    if len(name) > MAX_NAME_LEN:
+        return None, messages.NAME_TOO_LONG % MAX_NAME_LEN
+    return name, None
 
 
 def check_forwarded_from(bot, message):

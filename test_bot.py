@@ -1,4 +1,8 @@
-from betbot import database
+from collections import namedtuple
+
+from betbot import database, helpers, messages
+
+FakeUser = namedtuple("FakeUser", ["id", "first_name", "last_name", "username"])
 
 MATCH_DATA = {
     "teams": [
@@ -210,6 +214,65 @@ def test_playoff_score_extra(monkeypatch):
     assert result_penalty.score(database.Result(1, 1, 1)) == 4
     # 1-1 победа второй команды 3 балла
     assert result_penalty.score(database.Result(1, 1, 2)) == 3
+
+
+def test_pending_requests_crud(tmp_path):
+    db_path = str(tmp_path / "base.sqlite")
+    pending = database.PendingRequests(db_path)
+    user = FakeUser(id=42, first_name="Ann", last_name="Lee", username="ann")
+
+    assert not pending.isPending(42)
+    assert pending.getRequest(42) is None
+
+    pending.addRequest(user, database.utcnow())
+    assert pending.isPending(42)
+    req = pending.getRequest(42)
+    assert req.id() == 42
+    assert req.name() == "Ann Lee"
+    assert req.username() == "ann"
+    assert [r.id() for r in pending.listRequests()] == [42]
+
+    # Re-requesting is idempotent (no duplicate rows).
+    pending.addRequest(user, database.utcnow())
+    assert len(pending.listRequests()) == 1
+
+    pending.removeRequest(42)
+    assert not pending.isPending(42)
+    assert pending.listRequests() == []
+
+
+def test_pending_request_name_fallback(tmp_path):
+    pending = database.PendingRequests(str(tmp_path / "base.sqlite"))
+    pending.addRequest(
+        FakeUser(id=7, first_name=None, last_name=None, username=None),
+        database.utcnow(),
+    )
+    assert pending.getRequest(7).name() == "<id: 7>"
+
+
+def test_change_name_reflected_in_player(tmp_path):
+    db_path = str(tmp_path / "base.sqlite")
+    players = database.Players(db_path, admin_id=1)
+    players.createPlayer(99, "John", "Doe")
+
+    assert players.getPlayer(99).name() == "John Doe"
+
+    players.changeName(99, "Johnny")
+    assert players.getPlayer(99).name() == "Johnny"
+    # short_name still falls back to first_name.
+    assert players.getPlayer(99).short_name() == "John"
+
+
+def test_clean_display_name():
+    assert helpers.clean_display_name("  Bob  Smith ") == ("Bob Smith", None)
+    # Markdown control chars stripped.
+    assert helpers.clean_display_name("*Bob*") == ("Bob", None)
+
+    name, err = helpers.clean_display_name("   ")
+    assert name is None and err == messages.NAME_EMPTY
+
+    name, err = helpers.clean_display_name("x" * (helpers.MAX_NAME_LEN + 1))
+    assert name is None and err == messages.NAME_TOO_LONG % helpers.MAX_NAME_LEN
 
 
 def score_players(match_result, player_pred, other_players_preds):

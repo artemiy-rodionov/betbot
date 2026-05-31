@@ -61,11 +61,11 @@ class DbHelper:
         with self.db_lock:
             self.db.reload_data()
 
-    def register_player(self, user):
-        assert not self.is_registered(user)
-        logger.info(f"Register player {user}")
+    def register_player(self, pid, first_name, last_name):
+        assert not self.is_registered_by_id(pid)
+        logger.info(f"Register player id={pid} name={first_name} {last_name}")
         return self.get_db().players.createPlayer(
-            user.id, user.first_name, user.last_name, is_bot=False
+            pid, first_name, last_name, is_bot=False
         )
 
     def register_bot_player(self, bot_id, bot_name):
@@ -302,7 +302,7 @@ def register_admin(message):
             message.chat.id, messages.ALREADY_REGISTERED % (player.name(), player.id())
         )
         return
-    player = db_helper.register_player(user)
+    player = db_helper.register_player(user.id, user.first_name, user.last_name)
     bot.send_message(
         message.chat.id,
         messages.REGISTRATION_SUCCESS
@@ -328,7 +328,10 @@ def register(message):
             message.chat.id, messages.ALREADY_REGISTERED % (player.name(), player.id())
         )
         return
-    player = db_helper.register_player(message.reply_to_message.forward_from)
+    forward_user = message.reply_to_message.forward_from
+    player = db_helper.register_player(
+        forward_user.id, forward_user.first_name, forward_user.last_name
+    )
     bot.send_message(
         message.chat.id,
         messages.REGISTRATION_SUCCESS
@@ -373,7 +376,7 @@ def register_bot(message):
     # Parse the command to get bot name (optional)
     msg_parts = message.text.split(maxsplit=1)
     bot_name = msg_parts[1].strip() if len(msg_parts) > 1 else "OneZero"
-    
+
     if not bot_name:
         bot_name = "OneZero"
 
@@ -467,10 +470,118 @@ def cmd_update_standings(message):
     bot.send_message(message.chat.id, "Success")
 
 
+def _request_action_keyboard(uid):
+    """Inline Approve/Reject buttons for a pending access request."""
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=2)
+    keyboard.row(
+        telebot.types.InlineKeyboardButton(
+            messages.APPROVE_BUTTON, callback_data="approve_%d" % uid
+        ),
+        telebot.types.InlineKeyboardButton(
+            messages.REJECT_BUTTON, callback_data="reject_%d" % uid
+        ),
+    )
+    return keyboard
+
+
+def _notify_admin_new_request(req_user):
+    """DM the admin about a new access request with Approve/Reject buttons."""
+    full_name = ("%s %s" % (req_user.first_name or "", req_user.last_name or "")).strip()
+    username = " @%s" % req_user.username if req_user.username else ""
+    text = messages.NEW_REQUEST_ADMIN % (full_name or "(без имени)", username, req_user.id)
+    try:
+        bot.send_message(
+            config["admin_id"], text, reply_markup=_request_action_keyboard(req_user.id)
+        )
+    except Exception as err:
+        logger.warning("Could not notify admin of new access request: %s", err)
+
+
+@bot.message_handler(
+    commands=["pendingRequests"], func=lambda m: db_helper.is_admin(m.from_user)
+)
+def list_pending(message):
+    """List all pending access requests, each with Approve/Reject buttons."""
+    requests = db_helper.get_db().pending_requests.listRequests()
+    if not requests:
+        bot.send_message(message.chat.id, messages.PENDING_LIST_EMPTY)
+        return
+    bot.send_message(message.chat.id, messages.PENDING_LIST_HEADER % len(requests))
+    for req in requests:
+        username = " @%s" % req.username() if req.username() else ""
+        requested_at = (req.requested_at() or "").replace("T", " ")[:16]
+        text = messages.PENDING_LIST_ITEM % (
+            req.name(),
+            username,
+            req.id(),
+            requested_at,
+        )
+        bot.send_message(
+            message.chat.id, text, reply_markup=_request_action_keyboard(req.id())
+        )
+
+
+def _submit_access_request(user, chat_id):
+    """Shared self-signup logic for /start, /join, and the request-access button."""
+    if db_helper.is_registered(user):
+        bot.send_message(
+            chat_id, messages.HELP_MSG % RESULTS_URL, parse_mode="Markdown"
+        )
+        return
+    db = db_helper.get_db()
+    if db.pending_requests.isPending(user.id):
+        bot.send_message(chat_id, messages.REQUEST_PENDING)
+        return
+    db.pending_requests.addRequest(user, utils.utcnow())
+    logger.info("New access request from %s (%s)", user.id, user.username)
+    bot.send_message(chat_id, messages.REQUEST_RECEIVED)
+    _notify_admin_new_request(user)
+
+
+@bot.message_handler(
+    commands=["start", "join"], func=lambda m: m.chat.type == "private"
+)
+def request_access(message):
+    _submit_access_request(message.from_user, message.chat.id)
+
+
+@bot.message_handler(
+    commands=["setname"],
+    func=lambda m: m.chat.type == "private" and db_helper.is_registered(m.from_user),
+)
+def set_name_command(message):
+    player = db_helper.get_player(message.from_user)
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        bot.send_message(message.chat.id, messages.NAME_USAGE % player.name())
+        return
+    name, error = helpers.clean_display_name(parts[1])
+    if error:
+        bot.send_message(message.chat.id, error)
+        return
+    db_helper.get_db().players.changeName(player.id(), name)
+    bot.send_message(message.chat.id, messages.NAME_CHANGED % name)
+
+
+@bot.message_handler(
+    commands=["myname"],
+    func=lambda m: m.chat.type == "private" and db_helper.is_registered(m.from_user),
+)
+def my_name_command(message):
+    player = db_helper.get_player(message.from_user)
+    bot.send_message(message.chat.id, messages.NAME_USAGE % player.name())
+
+
 @bot.message_handler(func=lambda m: not db_helper.is_registered(m.from_user))
 def on_not_registered(message):
     msg = messages.NOT_REGISTERED.format(admin_name=config["admin_name"])
-    bot.send_message(message.chat.id, msg)
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        telebot.types.InlineKeyboardButton(
+            messages.REQUEST_ACCESS_BUTTON, callback_data="join_request"
+        )
+    )
+    bot.send_message(message.chat.id, msg, reply_markup=keyboard)
 
 
 @bot.message_handler(commands=["bet"])
@@ -507,6 +618,75 @@ def help(message):
     bot.send_message(
         message.chat.id, messages.HELP_MSG % RESULTS_URL, parse_mode="Markdown"
     )
+
+
+# Access-request callbacks: must be registered BEFORE the betting handler below,
+# otherwise they fall through to the b_/l_ parser (and get_player asserts registration).
+@bot.callback_query_handler(
+    func=lambda q: (q.data or "") == "join_request"
+    or (q.data or "").startswith(("approve_", "reject_"))
+)
+def handle_access_query(query):
+    bot.answer_callback_query(callback_query_id=query.id)
+    data = query.data or ""
+
+    if data == "join_request":
+        chat_id = query.message.chat.id if query.message else query.from_user.id
+        _submit_access_request(query.from_user, chat_id)
+        return
+
+    # approve_/reject_ are admin-only.
+    if not db_helper.is_admin(query.from_user):
+        return
+
+    action, _, uid_str = data.partition("_")
+    try:
+        uid = int(uid_str)
+    except ValueError:
+        return
+
+    db = db_helper.get_db()
+    req = db.pending_requests.getRequest(uid)
+
+    def edit_admin(text):
+        if query.message is None:
+            return
+        try:
+            bot.edit_message_text(
+                text,
+                chat_id=query.message.chat.id,
+                message_id=query.message.message_id,
+            )
+        except Exception as err:
+            logger.warning("Could not edit admin request message: %s", err)
+
+    if req is None:
+        edit_admin(messages.REQUEST_STALE_ADMIN)
+        return
+
+    if action == "approve":
+        if not db_helper.is_registered_by_id(uid):
+            db_helper.register_player(uid, req.first_name(), req.last_name())
+        db.pending_requests.removeRequest(uid)
+        edit_admin(messages.REQUEST_APPROVED_ADMIN % req.name())
+        try:
+            bot.send_message(
+                uid,
+                messages.REQUEST_APPROVED_USER + messages.HELP_MSG % RESULTS_URL,
+                parse_mode="Markdown",
+            )
+        except Exception as err:
+            logger.warning("Could not DM approved user %s: %s", uid, err)
+    else:  # reject
+        db.pending_requests.removeRequest(uid)
+        edit_admin(messages.REQUEST_REJECTED_ADMIN % req.name())
+        try:
+            bot.send_message(
+                uid,
+                messages.REQUEST_REJECTED_USER.format(admin_name=config["admin_name"]),
+            )
+        except Exception as err:
+            logger.warning("Could not DM rejected user %s: %s", uid, err)
 
 
 # l_<page>

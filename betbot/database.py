@@ -65,6 +65,7 @@ class Database(object):
 
     def reload_tables(self):
         self.players = Players(self._db_path, self.config["admin_id"])
+        self.pending_requests = PendingRequests(self._db_path)
         self.predictions = Predictions(self._db_path, self.players, self.matches)
 
     def reload_standings(self):
@@ -590,6 +591,13 @@ class Players(DbTable):
         with self.db() as db:
             db.execute("""UPDATE players SET timezone=? WHERE id=?""", (tz, pid))
 
+    def changeName(self, pid, display_name):
+        logger.info("Setting display name to %r for player %d", display_name, pid)
+        with self.db() as db:
+            db.execute(
+                """UPDATE players SET display_name=? WHERE id=?""", (display_name, pid)
+            )
+
     def getBotPlayers(self):
         """Get all bot players"""
         bot_players = []
@@ -611,6 +619,98 @@ class Players(DbTable):
                     )
                 )
         return bot_players
+
+
+class PendingRequest(object):
+    def __init__(self, id, first_name, last_name, username, requested_at):
+        self._id = id
+        self._first_name = first_name
+        self._last_name = last_name
+        self._username = username
+        self._requested_at = requested_at
+
+    def id(self):
+        return self._id
+
+    def first_name(self):
+        return self._first_name
+
+    def last_name(self):
+        return self._last_name
+
+    def username(self):
+        return self._username
+
+    def requested_at(self):
+        return self._requested_at
+
+    def name(self):
+        if self._first_name and self._last_name:
+            return "%s %s" % (self._first_name, self._last_name)
+        return (
+            self._first_name
+            if self._first_name is not None
+            else self._last_name
+            if self._last_name is not None
+            else "<id: %d>" % self._id
+        )
+
+
+class PendingRequests(DbTable):
+    def __init__(self, db_path):
+        super().__init__(db_path)
+        with self.db() as db:
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS pending_requests
+                    (id integer PRIMARY KEY, first_name text, last_name text,
+                     username text, requested_at text not null)"""
+            )
+
+    def addRequest(self, user, requested_at):
+        with self.db() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO pending_requests
+                    (id, first_name, last_name, username, requested_at)
+                    VALUES (?,?,?,?,?)""",
+                (
+                    user.id,
+                    user.first_name,
+                    user.last_name,
+                    user.username,
+                    requested_at.isoformat(),
+                ),
+            )
+        return self.getRequest(user.id)
+
+    def getRequest(self, uid):
+        with self.db() as db:
+            res = db.execute(
+                """SELECT first_name, last_name, username, requested_at
+                   FROM pending_requests WHERE id=?""",
+                (uid,),
+            ).fetchone()
+        if res is None:
+            return None
+        return PendingRequest(uid, res[0], res[1], res[2], res[3])
+
+    def listRequests(self):
+        requests = []
+        with self.db() as db:
+            for row in db.execute(
+                """SELECT id, first_name, last_name, username, requested_at
+                   FROM pending_requests ORDER BY requested_at"""
+            ):
+                requests.append(
+                    PendingRequest(int(row[0]), row[1], row[2], row[3], row[4])
+                )
+        return requests
+
+    def isPending(self, uid):
+        return self.getRequest(uid) is not None
+
+    def removeRequest(self, uid):
+        with self.db() as db:
+            db.execute("""DELETE FROM pending_requests WHERE id=?""", (uid,))
 
 
 class Predictions(DbTable):
