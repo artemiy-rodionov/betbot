@@ -35,6 +35,7 @@ html, body {
 
 #container {
   height: 100vh;
+  height: 100dvh;   /* dynamic viewport height: accounts for mobile browser UI */
   display: flex;
   flex-direction: column;
 }
@@ -43,12 +44,13 @@ html, body {
   flex: 0 0 auto;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
+  position: relative;            /* anchor for the info popover */
 }
 .lb-toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px 8px;
+  padding: 10px 14px;
   flex-wrap: wrap;
 }
 .lb-toolbar h1 {
@@ -57,12 +59,54 @@ html, body {
   margin: 0;
   letter-spacing: .2px;
 }
-.lb-toolbar .lb-meta {
-  color: var(--muted);
-  font-size: 12.5px;
+
+/* info button + popover (holds stats + legend) */
+.lb-info {
   margin-left: auto;
-  white-space: nowrap;
+  width: 28px; height: 28px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
 }
+.lb-info:hover, .lb-info.active { border-color: var(--accent); background: #eef4ff; }
+.lb-infopanel {
+  display: none;
+  position: absolute;
+  right: 14px; top: 46px;
+  z-index: 40;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.14);
+  padding: 12px 14px;
+  max-width: 280px;
+}
+.lb-infopanel.open { display: block; }
+.lb-infopanel .info-stats { font-weight: 600; font-size: 13px; }
+.lb-infopanel .info-updated { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.lb-infopanel .info-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--muted);
+  margin: 12px 0 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.lb-infopanel .lb-legend { flex-direction: column; align-items: flex-start; gap: 9px; padding: 0; }
 
 /* view tabs */
 .lb-tabs {
@@ -167,7 +211,11 @@ html, body {
   overflow: auto;
   position: relative;
   -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;   /* gently snap one match per swipe */
+  scroll-padding-left: 0;          /* overridden at runtime = frozen width */
 }
+/* one snap point per match column (defined on the first body row's cells) */
+tbody tr:first-child td.match-col { scroll-snap-align: start; }
 
 table.lb {
   border-collapse: separate;
@@ -215,6 +263,53 @@ table.lb thead tr.row-sub th {
 .match-card .score { font-size: 14px; font-weight: 700; margin: 1px 0; }
 .match-card .score.pending { color: var(--muted); font-weight: 600; }
 .match-card .meta { font-size: 10.5px; color: var(--muted); }
+th.match-head { cursor: pointer; }
+th.match-head:hover .match-card { color: var(--accent); }
+
+/* ---- Match-detail modal (tap a match header) ---- */
+.lb-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.42);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.lb-modal {
+  position: relative;
+  background: var(--bg);
+  border-radius: 12px;
+  box-shadow: 0 14px 44px rgba(0,0,0,.32);
+  width: min(420px, 100%);
+  max-height: 85vh; max-height: 85dvh;
+  overflow: auto;
+  padding: 18px 18px 10px;
+}
+.mm-close {
+  position: absolute; top: 6px; right: 10px;
+  border: 0; background: none;
+  font-size: 24px; line-height: 1;
+  color: var(--muted); cursor: pointer;
+}
+.mm-close:hover { color: var(--fg); }
+.mm-head { text-align: center; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.mm-teams { font-weight: 600; font-size: 15px; }
+.mm-score { font-size: 22px; font-weight: 800; margin: 4px 0; }
+.mm-score.pending { color: var(--muted); }
+.mm-meta { font-size: 12px; color: var(--muted); }
+.mm-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.mm-row:last-child { border-bottom: 0; }
+.mm-colhead { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+.mm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-pred { width: 56px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mm-pts  { width: 56px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mm-row.scored .mm-pts { color: var(--earned); font-weight: 700; }
+.mm-row.exact { background: var(--exact-bg); border-radius: 6px; }
+.mm-row.exact .mm-pts { color: #8a6d00; font-weight: 700; }
 
 /* ---- Sticky left columns ---- */
 /* left offsets are assigned at runtime from real column widths (see table.js);
@@ -315,23 +410,32 @@ tbody tr:nth-child(even) td.pred.exact { background: #fff0c2; }
   .lb-legend { font-size: 11px; gap: 10px; padding: 0 10px 8px; }
   .lb-tab { padding: 5px 9px; }
 
-  /* Keep #, Player and Pts frozen (the leaderboard essentials);
-     only Exact scrolls away to save width. Names are shrunk + truncated
-     so the frozen block stays slim and more matches are visible. */
-  .col-rank   { min-width: 34px; }
-  .col-player { min-width: 96px; }
-  .col-player .player-name { font-size: 11.5px; }
-  .col-player .pname {
-    display: inline-block;
-    max-width: 96px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    vertical-align: bottom;
+  /* Frozen side panel: place (#) + full name + Очки.
+     Name column has a fixed width and wraps onto multiple lines to fit. */
+  .col-rank   { min-width: 30px; }
+  .col-player {
+    width: 104px; min-width: 104px; max-width: 104px;
+    text-align: left;
+    line-height: 1.15;
+    padding: 5px 6px;
   }
-  .col-pts    { min-width: 50px; padding-left: 6px; padding-right: 6px; border-right: 2px solid var(--line-strong); }
-  .col-exact  { position: static !important; left: auto !important; min-width: 40px; border-right: 1px solid var(--line) !important; }
-  table.lb thead .col-exact { z-index: 3; }
+  /* higher specificity than base `table.lb th { white-space: nowrap }` */
+  table.lb th.col-player {
+    white-space: normal;          /* allow wrapping */
+    overflow-wrap: anywhere;       /* break long single words like "Strogalshchikov" */
+  }
+  .col-player .player-name { display: inline; font-size: 11.5px; }   /* flow as text so it can wrap */
+  .col-player .queen { font-size: 11px; }
+
+  /* Очки stay frozen, just smaller column + font. */
+  .col-pts    { min-width: 38px; font-size: 12px; padding-left: 4px; padding-right: 4px;
+                border-right: 2px solid var(--line-strong); }
+  td.col-pts  { font-size: 12px; }
+
+  /* Exact is the only column that unfreezes (scrolls) to save width. */
+  .col-exact  { min-width: 38px; }
+  table.lb tbody .col-exact { position: static !important; left: auto !important; }
+  table.lb thead .col-exact { left: auto !important; z-index: 3 !important; }
 
   .match-card { min-width: 72px; }
   .match-card .teams { font-size: 11px; white-space: normal; }

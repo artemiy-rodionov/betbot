@@ -8,7 +8,10 @@
   var QUEENS_ONLY = false;              // 👑 filter
   var VIEW = "all";                     // all | round | historical | today | next
   var ROUND = null;                     // selected round when VIEW === "round"
-  var SCROLL_MODE = "end";              // end (first load) | start (view change) | keep
+  var SCROLL_MODE = "lastPlayed";       // lastPlayed (open/view change) | keep (sort/filter)
+  var LAST_MODIFIED = null;             // results.json Last-Modified header
+  var REFRESH_TIMER = null;
+  var REFRESH_MS = 60000;               // auto-refresh interval
 
   // ---- helpers ----
   function clean(s) {
@@ -29,6 +32,14 @@
     var n = Number(v);
     if (!isFinite(n)) return "";
     return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+  }
+  // "Mon, 31 May 2026 14:23:00 GMT" -> "31.05 14:23"
+  function fmtDateTime(s) {
+    if (!s) return "";
+    var d = new Date(s);
+    if (isNaN(d.getTime())) return "";
+    var p = function (n) { return ("0" + n).slice(-2); };
+    return p(d.getDate()) + "." + p(d.getMonth() + 1) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
   }
 
   // ---- match (column) filtering ----
@@ -98,6 +109,12 @@
       var av, bv;
       if (k === "name") { av = a.name.toLowerCase(); bv = b.name.toLowerCase();
         if (av < bv) return -1 * d; if (av > bv) return 1 * d; return 0; }
+      // rank tracks score desc → ascending rank = higher score first
+      if (k === "rank") {
+        if (a.score !== b.score) return (b.score - a.score) * d;
+        if (a.exact !== b.exact) return (b.exact - a.exact) * d;
+        return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
+      }
       av = a[k]; bv = b[k];
       if (av !== bv) return (av < bv ? -1 : 1) * d;
       // tie-breakers: score, then exact, then name
@@ -122,7 +139,7 @@
   }
 
   // ---- header ----
-  function buildHead(matches) {
+  function buildHead(matches, players) {
     var thead = el("thead");
     var rMatch = el("tr", "row-match");
     var rSub = el("tr", "row-sub");
@@ -136,20 +153,24 @@
       return th1;
     }
     rMatch.appendChild(corner("rank", "rank", "#"));
-    rMatch.appendChild(corner("player", "name", "Player"));
-    rMatch.appendChild(corner("pts", "score", "Pts"));
-    rMatch.appendChild(corner("exact", "exact", "Exact"));
+    rMatch.appendChild(corner("player", "name", "Игрок"));
+    rMatch.appendChild(corner("pts", "score", "Очки"));
+    rMatch.appendChild(corner("exact", "exact", "Точные"));
 
     matches.forEach(function (m) {
-      var th = el("th", "match-col");
+      var th = el("th", "match-col match-head");
       var result = clean(m.result);
       var pending = !result || /^[\s-]*$/.test(result);
       th.innerHTML =
         '<div class="match-card">' +
-          '<div class="teams">' + esc(m.team0) + " v " + esc(m.team1) + "</div>" +
-          '<div class="score' + (pending ? " pending" : "") + '">' + (pending ? "vs" : esc(result)) + "</div>" +
+          '<div class="teams">' + esc(m.team0) + " – " + esc(m.team1) + "</div>" +
+          '<div class="score' + (pending ? " pending" : "") + '">' + (pending ? "—" : esc(result)) + "</div>" +
           '<div class="meta">' + esc(m.time) + (m.round ? " · " + esc(m.round) : "") + "</div>" +
         "</div>";
+      th.title = "Прогнозы на матч";
+      (function (match) {
+        th.addEventListener("click", function () { openMatchPanel(match, players); });
+      })(m);
       rMatch.appendChild(th);
 
       var sub = el("th", "match-col");
@@ -173,10 +194,10 @@
         : '<span class="rank-badge">' + r + "</span>";
       tr.appendChild(el("th", "col-rank", badge));
 
-      var nameHtml = '<span class="player-name"><span class="pname">' + esc(p.name) + "</span>" +
-        (p.is_queen ? ' <span class="queen">👑</span>' : "") + "</span>";
+      var nameHtml = '<span class="player-name">' + esc(p.name) +
+        (p.is_queen ? ' <span class="queen">🎲</span>' : "") + "</span>";
       var nameTh = el("th", "col-player", nameHtml);
-      nameTh.title = p.name; // full name on hover/tap when truncated
+      nameTh.title = p.name;
       tr.appendChild(nameTh);
       tr.appendChild(el("td", "col-pts", fmtPts(p.score)));
       tr.appendChild(el("td", "col-exact", p.exact ? String(p.exact) : "·"));
@@ -212,15 +233,32 @@
     var w = [ths[0].offsetWidth, ths[1].offsetWidth, ths[2].offsetWidth, ths[3].offsetWidth];
     if (!w[0] && !w[1]) return; // layout not measurable (e.g. headless)
     var lefts = [0, w[0], w[0] + w[1], w[0] + w[1] + w[2]];
-    ["col-rank", "col-player", "col-pts", "col-exact"].forEach(function (cls, i) {
+    var classes = ["col-rank", "col-player", "col-pts", "col-exact"];
+    classes.forEach(function (cls, i) {
       var cells = table.querySelectorAll("." + cls);
       for (var j = 0; j < cells.length; j++) cells[j].style.left = lefts[i] + "px";
     });
+
+    // Width of the frozen (horizontally-pinned) block, so scroll-snap can
+    // align each match column right after it instead of under it.
+    var frozenRight = 0;
+    classes.forEach(function (cls, i) {
+      var th = headRow.children[i];
+      var cs = window.getComputedStyle ? window.getComputedStyle(th) : null;
+      if (cs && cs.position === "sticky" && cs.left !== "auto") {
+        frozenRight = Math.max(frozenRight, lefts[i] + th.offsetWidth);
+      }
+    });
+    var box = table.parentNode;
+    if (box && box.classList && box.classList.contains("lb-scroll")) {
+      box.style.scrollPaddingLeft = frozenRight + "px";
+    }
   }
 
   function render() {
     var scroll = document.querySelector(".lb-scroll");
     var prevLeft = scroll ? scroll.scrollLeft : 0;
+    var prevTop = scroll ? scroll.scrollTop : 0;
 
     var allMatches = DATA.matches || [];
     var matches = visibleMatches(allMatches);
@@ -229,7 +267,7 @@
     var players = sortPlayers(all.filter(function (p) { return !QUEENS_ONLY || p.is_queen; }));
 
     var table = el("table", "lb");
-    table.appendChild(buildHead(matches));
+    table.appendChild(buildHead(matches, all));
     table.appendChild(buildBody(players, matches, ranks));
 
     var container = document.getElementById("container");
@@ -244,28 +282,45 @@
 
     applyStickyOffsets(table);
 
-    // first load: desktop jumps to latest match, phones start at the standings;
-    // view change: back to start; otherwise keep current position.
-    var isMobile = typeof window.matchMedia === "function" &&
-                   window.matchMedia("(max-width: 640px)").matches;
-    var mode = (SCROLL_MODE === "end" && isMobile) ? "start" : SCROLL_MODE;
-    box.scrollLeft = mode === "end" ? box.scrollWidth : mode === "start" ? 0 : prevLeft;
+    // On open / view change, land on the last played match; otherwise (sort,
+    // filter toggle, auto-refresh) keep the current scroll position.
+    if (SCROLL_MODE === "keep") { box.scrollLeft = prevLeft; box.scrollTop = prevTop; }
+    else scrollToLastPlayed(box, table, matches);
     SCROLL_MODE = "keep";
   }
 
+  // scroll so the most recent played match sits at the right edge of the view
+  function scrollToLastPlayed(box, table, matches) {
+    var lpi = -1;
+    for (var i = 0; i < matches.length; i++) if (isPlayed(matches[i])) lpi = i;
+    if (lpi < 0) { box.scrollLeft = 0; return; }      // nothing played yet → start
+    var headRow = table.querySelector("thead tr.row-match");
+    var cell = headRow ? headRow.children[4 + lpi] : null;   // 4 frozen cols precede matches
+    if (!cell) { box.scrollLeft = box.scrollWidth; return; }
+    box.scrollLeft = Math.max(0, cell.offsetLeft + cell.offsetWidth - box.clientWidth);
+  }
+
   function noMatchesMsg() {
-    if (VIEW === "today") return "No matches scheduled for today.";
-    if (VIEW === "next") return "No upcoming matches — every match has been played.";
-    if (VIEW === "round") return "No matches in this round.";
-    return "No matches to show.";
+    if (VIEW === "today") return "Сегодня матчей нет.";
+    if (VIEW === "next") return "Будущих матчей нет — все матчи сыграны.";
+    if (VIEW === "round") return "В этом туре нет матчей.";
+    return "Нет матчей для отображения.";
+  }
+
+  // Russian plural: plural(n, "игрок", "игрока", "игроков")
+  function plural(n, one, few, many) {
+    var d = n % 10, h = n % 100;
+    if (d === 1 && h !== 11) return one;
+    if (d >= 2 && d <= 4 && (h < 10 || h >= 20)) return few;
+    return many;
   }
 
   var TABS = [
-    { id: "all", label: "All" },
-    { id: "round", label: "By round" },
-    { id: "historical", label: "Historical" },
-    { id: "today", label: "Today" },
-    { id: "next", label: "Next" }
+    { id: "all", label: "Все" },
+    { id: "round", label: "По турам" },
+    { id: "historical", label: "Сыгранные" },
+    { id: "today", label: "Сегодня" },
+    { id: "next", label: "Будущие" }
   ];
 
   function buildToolbar(allMatches, nVisible, nShown, all) {
@@ -275,7 +330,7 @@
 
     // --- row 1: title, tabs, round picker, queens filter, meta ---
     var bar = el("div", "lb-toolbar");
-    bar.appendChild(el("h1", null, "Leaderboard"));
+    bar.appendChild(el("h1", null, "Турнирная таблица"));
 
     var tabs = el("div", "lb-tabs");
     var counts = tabCounts(allMatches);
@@ -286,7 +341,7 @@
         if (VIEW === t.id) return;
         VIEW = t.id;
         if (VIEW === "round" && !ROUND) ROUND = (roundsOf(allMatches)[0] || null);
-        SCROLL_MODE = "start";
+        SCROLL_MODE = "lastPlayed";
         render();
       });
       tabs.appendChild(b);
@@ -301,29 +356,59 @@
         if (r === ROUND) o.selected = true;
         sel.appendChild(o);
       });
-      sel.addEventListener("change", function () { ROUND = sel.value; SCROLL_MODE = "start"; render(); });
+      sel.addEventListener("change", function () { ROUND = sel.value; SCROLL_MODE = "lastPlayed"; render(); });
       bar.appendChild(sel);
     }
 
     if (nQueens) {
       var qbtn = el("button", "lb-filter" + (QUEENS_ONLY ? " active" : ""),
-        "👑 Queens only (" + nQueens + ")");
+        "🎲 Только лудоманы (" + nQueens + ")");
       qbtn.setAttribute("aria-pressed", QUEENS_ONLY ? "true" : "false");
       qbtn.addEventListener("click", function () { QUEENS_ONLY = !QUEENS_ONLY; render(); });
       bar.appendChild(qbtn);
     }
 
-    var who = QUEENS_ONLY ? (nShown + " queens") : (nShown + " players");
-    bar.appendChild(el("div", "lb-meta", who + " · " + nVisible + " / " + allMatches.length + " matches"));
+    // --- info button (ⓘ): stats + legend tucked into a popover to keep the bar light ---
+    var who = QUEENS_ONLY
+      ? (nShown + " " + plural(nShown, "лудоман", "лудомана", "лудоманов"))
+      : (nShown + " " + plural(nShown, "игрок", "игрока", "игроков"));
+    var statsText = who + " · " + nVisible + " из " + allMatches.length + " матчей";
+
+    var infoBtn = el("button", "lb-info", "i");
+    infoBtn.setAttribute("aria-label", "Информация");
+    infoBtn.title = "Информация";
+    var updated = fmtDateTime(LAST_MODIFIED);
+    var panel = el("div", "lb-infopanel",
+      '<div class="info-stats">' + statsText + "</div>" +
+      (updated ? '<div class="info-updated">Обновлено: ' + updated + "</div>" : "") +
+      '<div class="info-title">Легенда таблицы</div>' +
+      '<div class="lb-legend">' +
+        '<span class="chip"><span class="sample s-earned">+1.2</span>очки начислены</span>' +
+        '<span class="chip"><span class="sample s-miss">1-0</span>без очков</span>' +
+        '<span class="chip"><span class="swatch s-exact"></span>точный счёт (бонус)</span>' +
+      "</div>");
+    infoBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var open = panel.classList.toggle("open");
+      infoBtn.classList.toggle("active", open);
+    });
+    panel.addEventListener("click", function (e) { e.stopPropagation(); });
+    bar.appendChild(infoBtn);
+
     header.appendChild(bar);
-
-    // --- row 2: legend ---
-    header.appendChild(el("div", "lb-legend",
-      '<span class="chip"><span class="sample s-earned">+1.2</span>points earned</span>' +
-      '<span class="chip"><span class="sample s-miss">1-0</span>no points</span>' +
-      '<span class="chip"><span class="swatch s-exact"></span>exact scoreline (bonus)</span>'));
-
+    header.appendChild(panel);
     return header;
+  }
+
+  // close the info popover on any outside click (attached once)
+  if (!window.__lbInfoBound) {
+    window.__lbInfoBound = true;
+    document.addEventListener("click", function () {
+      var p = document.querySelector(".lb-infopanel.open");
+      if (p) p.classList.remove("open");
+      var b = document.querySelector(".lb-info.active");
+      if (b) b.classList.remove("active");
+    });
   }
 
   function onSort(key) {
@@ -331,9 +416,68 @@
       SORT.dir = -SORT.dir;
     } else {
       SORT.key = key;
-      SORT.dir = (key === "name") ? 1 : -1; // names A→Z, numbers high→low
+      // names A→Z and rank 1→N ascending; points/exact high→low
+      SORT.dir = (key === "name" || key === "rank") ? 1 : -1;
     }
     render();
+  }
+
+  // tap a match header -> modal with the score + every player's prediction, ranked by points
+  function openMatchPanel(match, players) {
+    closeMatchPanel();
+    var result = clean(match.result);
+    var pending = !result || /^[\s-]*$/.test(result);
+
+    var rows = players.map(function (p) {
+      var pr = p.predByMatch[match.id];
+      var has = pr && pr.result != null;
+      return { name: p.name, queen: p.is_queen, has: has,
+               pred: has ? pr.result : null,
+               pts: has ? (Number(pr.score) || 0) : -1,
+               exact: has && !!pr.is_exact_score };
+    });
+    rows.sort(function (a, b) {
+      if (a.has !== b.has) return a.has ? -1 : 1;
+      if (b.pts !== a.pts) return b.pts - a.pts;
+      return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
+    });
+
+    var list = rows.map(function (r) {
+      var cls = r.exact ? "mm-row exact" : (r.has && r.pts > 0 ? "mm-row scored" : "mm-row");
+      var pts = r.has ? (r.pts > 0 ? "+" + fmtPts(r.pts) : "0") : "";
+      return '<div class="' + cls + '">' +
+        '<span class="mm-name">' + esc(r.name) + (r.queen ? " 🎲" : "") + "</span>" +
+        '<span class="mm-pred">' + (r.has ? esc(r.pred) : "–") + "</span>" +
+        '<span class="mm-pts">' + pts + "</span>" +
+      "</div>";
+    }).join("");
+
+    var head =
+      '<div class="mm-head">' +
+        '<div class="mm-teams">' + esc(match.team0) + " – " + esc(match.team1) + "</div>" +
+        '<div class="mm-score' + (pending ? " pending" : "") + '">' + (pending ? "—" : esc(result)) + "</div>" +
+        '<div class="mm-meta">' + esc(match.time) + (match.round ? " · " + esc(match.round) : "") + "</div>" +
+      "</div>";
+    var header =
+      '<div class="mm-row mm-colhead"><span class="mm-name">Игрок</span>' +
+      '<span class="mm-pred">Прогноз</span><span class="mm-pts">Очки</span></div>';
+
+    var overlay = el("div", "lb-modal-overlay");
+    var modal = el("div", "lb-modal", head + header + '<div class="mm-list">' + list + "</div>");
+    var closeBtn = el("button", "mm-close", "×");
+    closeBtn.setAttribute("aria-label", "Закрыть");
+    closeBtn.addEventListener("click", closeMatchPanel);
+    modal.appendChild(closeBtn);
+    overlay.appendChild(modal);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) closeMatchPanel(); });
+    document.body.appendChild(overlay);
+    document.addEventListener("keydown", escCloseMatch);
+  }
+  function escCloseMatch(e) { if (e.key === "Escape") closeMatchPanel(); }
+  function closeMatchPanel() {
+    var o = document.querySelector(".lb-modal-overlay");
+    if (o) o.parentNode.removeChild(o);
+    document.removeEventListener("keydown", escCloseMatch);
   }
 
   function showStatus(msg, spin) {
@@ -342,11 +486,34 @@
   }
 
   function load() {
-    showStatus("Loading results…", true);
+    showStatus("Загрузка результатов…", true);
     fetch("results.json", { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (d) { DATA = d; render(); })
-      .catch(function (e) { showStatus("Couldn't load results.json (" + e.message + ")", false); });
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        LAST_MODIFIED = r.headers.get("Last-Modified");
+        return r.json();
+      })
+      .then(function (d) { DATA = d; render(); startAutoRefresh(); })
+      .catch(function (e) { showStatus("Не удалось загрузить results.json (" + e.message + ")", false); });
+  }
+
+  // re-fetch periodically; re-render (keeping scroll/sort) only when data changed
+  function startAutoRefresh() {
+    if (REFRESH_TIMER) return;
+    REFRESH_TIMER = setInterval(function () {
+      fetch("results.json", { cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) return null;
+          var lm = r.headers.get("Last-Modified");
+          return r.json().then(function (d) {
+            if (JSON.stringify(d) !== JSON.stringify(DATA)) {
+              DATA = d; LAST_MODIFIED = lm || LAST_MODIFIED;
+              SCROLL_MODE = "keep"; render();
+            }
+          });
+        })
+        .catch(function () {});
+    }, REFRESH_MS);
   }
 
   if (document.readyState === "loading") {
