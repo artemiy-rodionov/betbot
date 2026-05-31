@@ -1,4 +1,4 @@
-.PHONY: help install test lint fmt format check
+.PHONY: help install test lint fmt format check deploy
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -20,3 +20,7 @@ fmt:  ## Auto-format with ruff
 format: fmt  ## Alias for fmt
 
 check: lint test  ## Lint then run tests
+
+deploy:  ## Push + build next image on the server (runs local scripts/deploy.sh)
+	@test -x scripts/deploy.sh || { echo "scripts/deploy.sh missing — copy scripts/deploy.sh.example and fill it in"; exit 1; }
+	./scripts/deploy.sh

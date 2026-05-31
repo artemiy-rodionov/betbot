@@ -4,12 +4,9 @@ RESULTS_TABLE = "Таблица результатов [доступна по с
 PRESS_BET = "Жми /bet, чтобы сделать новую ставку или изменить существующую."
 MY_BETS = "/mybets, чтобы посмотреть свои ставки."
 SETTINGS_HELP = (
-    "/setname <имя> — изменить отображаемое имя. "
-    "/timezone — настроить часовой пояс."
+    "/setname <имя> — изменить отображаемое имя. /timezone — настроить часовой пояс."
 )
-HELP_MSG = (
-    PRESS_BET + " " + MY_BETS + " " + RESULTS_TABLE + "\n" + SETTINGS_HELP
-)
+HELP_MSG = PRESS_BET + " " + MY_BETS + " " + RESULTS_TABLE + "\n" + SETTINGS_HELP
 START_MSG = "Привет, %s! Поздравляю, ты в игре!\n"
 SEND_PRIVATE_MSG = "Tcccc, не пали контору. Напиши мне личное сообщение"
 NAVIGATION_ERROR = (
@@ -39,31 +36,24 @@ NOT_REGISTERED = (
 REQUEST_ACCESS_BUTTON = "Запросить доступ"
 APPROVE_BUTTON = "✅ Одобрить"
 REJECT_BUTTON = "❌ Отклонить"
-REQUEST_RECEIVED = (
-    "Заявка отправлена! Жди — администратор скоро её рассмотрит."
-)
+REQUEST_RECEIVED = "Заявка отправлена! Жди — администратор скоро её рассмотрит."
 REQUEST_PENDING = "Твоя заявка уже на рассмотрении. Немного терпения 🙂"
 NEW_REQUEST_ADMIN = (
-    "🔔 Новая заявка на доступ:\n%s%s (id: %s)"
-)  # name, " @username" or "", id
+    "🔔 Новая заявка на доступ:\n%s%s (id: %s)"  # name, " @username" or "", id
+)
 REQUEST_APPROVED_ADMIN = "✅ Доступ выдан: %s"
 REQUEST_REJECTED_ADMIN = "❌ Заявка отклонена: %s"
 REQUEST_STALE_ADMIN = "Эта заявка уже обработана или отозвана."
 PENDING_LIST_HEADER = "📋 Заявки на доступ (%d):"
 PENDING_LIST_EMPTY = "Заявок на доступ нет."
 PENDING_LIST_ITEM = "%s%s (id: %s) — %s"  # name, " @username" or "", id, requested_at
-REQUEST_APPROVED_USER = (
-    "Тебя одобрили! Добро пожаловать в игру 🎉\n"
-)
+REQUEST_APPROVED_USER = "Тебя одобрили! Добро пожаловать в игру 🎉\n"
 REQUEST_REJECTED_USER = (
     "Увы, заявка на доступ отклонена. Если это ошибка — напиши {admin_name}."
 )
 
 # Self-serve name change
-NAME_USAGE = (
-    'Чтобы сменить имя, напиши "/setname <новое имя>".\n'
-    "Текущее имя: %s"
-)
+NAME_USAGE = 'Чтобы сменить имя, напиши "/setname <новое имя>".\nТекущее имя: %s'
 NAME_CHANGED = "Готово! Теперь тебя зовут %s."
 NAME_TOO_LONG = "Слишком длинное имя. Максимум %d символов."
 NAME_EMPTY = "Имя не может быть пустым."

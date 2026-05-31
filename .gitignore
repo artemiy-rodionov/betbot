@@ -7,3 +7,6 @@ html
 
 # Ignore dynaconf secret files
 .secrets.*
+
+# Local scripts
+scripts

@@ -486,9 +486,15 @@ def _request_action_keyboard(uid):
 
 def _notify_admin_new_request(req_user):
     """DM the admin about a new access request with Approve/Reject buttons."""
-    full_name = ("%s %s" % (req_user.first_name or "", req_user.last_name or "")).strip()
+    full_name = (
+        "%s %s" % (req_user.first_name or "", req_user.last_name or "")
+    ).strip()
     username = " @%s" % req_user.username if req_user.username else ""
-    text = messages.NEW_REQUEST_ADMIN % (full_name or "(без имени)", username, req_user.id)
+    text = messages.NEW_REQUEST_ADMIN % (
+        full_name or "(без имени)",
+        username,
+        req_user.id,
+    )
     try:
         bot.send_message(
             config["admin_id"], text, reply_markup=_request_action_keyboard(req_user.id)
