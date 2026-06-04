@@ -345,6 +345,18 @@ def register(message):
 
 
 @bot.message_handler(
+    commands=["queens"], func=lambda m: db_helper.is_admin(m.from_user)
+)
+def list_queens(message):
+    page = helpers.create_queens_page(db_helper.get_db())
+    if page is None:
+        bot.send_message(message.chat.id, messages.QUEENS_EMPTY)
+        return
+    text, keyboard = page
+    bot.send_message(message.chat.id, text, reply_markup=keyboard)
+
+
+@bot.message_handler(
     commands=["makeQueen"], func=lambda m: db_helper.is_admin(m.from_user)
 )
 def make_queen(message):
@@ -693,6 +705,33 @@ def handle_access_query(query):
             )
         except Exception as err:
             logger.warning("Could not DM rejected user %s: %s", uid, err)
+
+
+# Queen toggle callbacks (queen_<target>_<id>): admin-only, must precede the betting handler.
+@bot.callback_query_handler(func=lambda q: (q.data or "").startswith("queen_"))
+def handle_queen_query(query):
+    bot.answer_callback_query(callback_query_id=query.id)
+    if not db_helper.is_admin(query.from_user):
+        return
+    m = re.match(r"^queen_([01])_(-?\d+)$", query.data or "")
+    if m is None:
+        return
+    target = bool(int(m.group(1)))
+    pid = int(m.group(2))
+    db_helper.get_db().players.changeIsQueen(pid, target)
+    page = helpers.create_queens_page(db_helper.get_db())
+    if page is None or query.message is None:
+        return
+    text, keyboard = page
+    try:
+        bot.edit_message_text(
+            text,
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            reply_markup=keyboard,
+        )
+    except Exception as err:
+        logger.warning("Could not update queens message: %s", err)
 
 
 # l_<page>

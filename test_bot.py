@@ -263,6 +263,44 @@ def test_change_name_reflected_in_player(tmp_path):
     assert players.getPlayer(99).short_name() == "John"
 
 
+def test_create_queens_page(tmp_path):
+    db_path = str(tmp_path / "base.sqlite")
+    players = database.Players(db_path, admin_id=1)
+    players.createPlayer(10, "Zoe", None, is_queen=True)
+    players.createPlayer(11, "Amy", None, is_queen=False)
+    players.createPlayer(-999, "Bot", "Bot", is_bot=True)  # bots excluded
+
+    class DB:
+        pass
+
+    db = DB()
+    db.players = players
+
+    text, keyboard = helpers.create_queens_page(db)
+    rows = keyboard.keyboard  # list of rows, each a list of buttons
+    labels = [btn.text for row in rows for btn in row]
+    cbs = [btn.callback_data for row in rows for btn in row]
+
+    # Bot excluded -> only 2 buttons, sorted by name (Amy before Zoe).
+    assert len(labels) == 2
+    assert labels[0].endswith("Amy") and labels[1].endswith("Zoe")
+    # Amy is not queen -> tapping makes queen (target 1); Zoe is queen -> target 0.
+    assert cbs[0] == "queen_1_11"
+    assert cbs[1] == "queen_0_10"
+    assert "♛" in labels[1]  # queen marker shown for Zoe
+
+
+def test_create_queens_page_empty(tmp_path):
+    players = database.Players(str(tmp_path / "base.sqlite"), admin_id=1)
+
+    class DB:
+        pass
+
+    db = DB()
+    db.players = players
+    assert helpers.create_queens_page(db) is None
+
+
 def test_clean_display_name():
     assert helpers.clean_display_name("  Bob  Smith ") == ("Bob Smith", None)
     # Markdown control chars stripped.

@@ -37,6 +37,33 @@ def check_forwarded_from(bot, message):
     return message.reply_to_message.forward_from
 
 
+def create_queens_page(db):
+    """Build the queen-management message: one toggle button per (non-bot) player.
+
+    Returns (text, keyboard), or None if there are no players.
+    """
+    players = sorted(
+        (p for p in db.players.getAllPlayers() if not p.is_bot()),
+        key=lambda p: p.name().lower(),
+    )
+    if not players:
+        return None
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    for p in players:
+        if p.is_queen():
+            label = "%s ♛ %s" % (messages.QUEEN_REMOVE_PREFIX, p.name())
+            target = 0
+        else:
+            label = "%s %s" % (messages.QUEEN_ADD_PREFIX, p.name())
+            target = 1
+        keyboard.add(
+            telebot.types.InlineKeyboardButton(
+                label, callback_data="queen_%d_%d" % (target, p.id())
+            )
+        )
+    return messages.QUEENS_HEADER, keyboard
+
+
 def change_queen(bot, db_helper, message, is_queen):
     forward_from = check_forwarded_from(bot, message)
     if forward_from is None:

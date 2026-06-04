@@ -47,6 +47,12 @@ REQUEST_STALE_ADMIN = "Эта заявка уже обработана или о
 PENDING_LIST_HEADER = "📋 Заявки на доступ (%d):"
 PENDING_LIST_EMPTY = "Заявок на доступ нет."
 PENDING_LIST_ITEM = "%s%s (id: %s) — %s"  # name, " @username" or "", id, requested_at
+
+# Queen (♛) management
+QUEENS_HEADER = "👑 Олигархи (♛). Нажми на игрока, чтобы переключить статус:"
+QUEENS_EMPTY = "Нет зарегистрированных игроков."
+QUEEN_ADD_PREFIX = "➕"
+QUEEN_REMOVE_PREFIX = "➖"
 REQUEST_APPROVED_USER = "Тебя одобрили! Добро пожаловать в игру 🎉\n"
 REQUEST_REJECTED_USER = (
     "Увы, заявка на доступ отклонена. Если это ошибка — напиши {admin_name}."
@@ -74,8 +80,9 @@ ADMIN_HELP_MSG = (
     "/pendingRequests - показать заявки на доступ (с кнопками одобрить/отклонить)\n"
     "/register - Регистрация пользователя"
     "(ввести в ответ на форвард сообщения от пользователя)\n"
-    "/makeQueen - сделать олигархом(как выше)\n"
-    "/unmakeQueen - разжаловать(как выше)\n"
+    "/queens - список игроков с кнопками сделать/разжаловать олигарха\n"
+    "/makeQueen - сделать олигархом(в ответ на форвард)\n"
+    "/unmakeQueen - разжаловать(в ответ на форвард)\n"
     "/registerAdmin - зарегать себя\n"
     "/registerBot [name] - создать 1-0 бота (только один разрешен)\n"
     "/listBots - показать всех зарегистрированных ботов\n"

@@ -21,6 +21,6 @@ format: fmt  ## Alias for fmt
 
 check: lint test  ## Lint then run tests
 
-deploy:  ## Push + build next image on the server (runs local scripts/deploy.sh)
+deploy:  ## Push + build next image, then prompt to restart the container
 	@test -x scripts/deploy.sh || { echo "scripts/deploy.sh missing — copy scripts/deploy.sh.example and fill it in"; exit 1; }
 	./scripts/deploy.sh
