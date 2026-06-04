@@ -315,12 +315,14 @@
     return many;
   }
 
+  // NB: results.json only contains matches that have already started (the backend
+  // builds it from getMatchesBefore(now)). So "Будущие" (future) would always be
+  // empty, and "Сыгранные" (played) is effectively the same as "Все" — both tabs
+  // are intentionally omitted.
   var TABS = [
     { id: "all", label: "Все" },
     { id: "round", label: "По турам" },
-    { id: "historical", label: "Сыгранные" },
-    { id: "today", label: "Сегодня" },
-    { id: "next", label: "Будущие" }
+    { id: "today", label: "Сегодня" }
   ];
 
   function buildToolbar(allMatches, nVisible, nShown, all) {
