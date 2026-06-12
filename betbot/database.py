@@ -315,7 +315,9 @@ class Match(object):
         "Group F": "F",
         "Group G": "G",
         "Group H": "H",
+        "Round of 32": "1/16",
         "Round of 16": "⅛",
+        "8th Finals": "⅛",
         "Quarter-finals": "¼",
         "Semi-finals": "½",
         "3rd Place Final": BRONZE_MEDAL,
@@ -372,7 +374,14 @@ class Match(object):
 
     def short_round(self):
         round = self.round()
-        return Match.SHORT_ROUNDS.get(round, round)
+        if round in Match.SHORT_ROUNDS:
+            return Match.SHORT_ROUNDS[round]
+        # Group-stage rounds must stay short so the date/time still fits
+        # on the /bet inline buttons: "Group I" -> "I",
+        # "Group Stage - 1" / "League Stage - 1" -> "1".
+        short = re.sub(r"^(?:Group|League)\s+Stage\s*-?\s*", "", round)
+        short = re.sub(r"^Group\s+", "", short).strip()
+        return short or round
 
     def team(self, index):
         return self._teams[index]
