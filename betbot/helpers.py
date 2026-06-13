@@ -27,6 +27,24 @@ def clean_display_name(raw):
     return name, None
 
 
+def compute_player_ranks(players):
+    """Map player id -> rank for an already-sorted list of player dicts.
+
+    Players sharing the same ``sort_key`` get the same rank (standard
+    competition ranking, e.g. 1, 2, 2, 4). ``players`` must already be
+    ordered best-first.
+    """
+    ranks = {}
+    prev_key = None
+    rank = 0
+    for idx, player in enumerate(players):
+        if prev_key != player["sort_key"]:
+            rank = idx + 1
+            prev_key = player["sort_key"]
+        ranks[player["id"]] = rank
+    return ranks
+
+
 def check_forwarded_from(bot, message):
     if message.reply_to_message is None:
         bot.send_message(message.chat.id, messages.REGISTER_SHOULD_BE_REPLY)
@@ -107,14 +125,10 @@ def send_scores(
     else:
         results_before_finished = results
 
-    player_positions_before = {}
-    prev_key = None
-    rank = 0
-    for idx, player in enumerate(results_before_finished["players"].values()):
-        if prev_key != player["sort_key"]:
-            rank = idx + 1
-            prev_key = player["sort_key"]
-        player_positions_before[player["id"]] = rank
+    player_positions_before = compute_player_ranks(
+        results_before_finished["players"].values()
+    )
+    new_ranks = compute_player_ranks(results["players"].values())
 
     text = f"{extra_msg}\n"
     if is_playoff:
@@ -122,13 +136,8 @@ def send_scores(
     else:
         text += "Таблица: \n"
     text += "\n```\n"
-    prev_key = None
-    new_rank = 0
-    for idx, player in enumerate(results["players"].values()):
-        if prev_key != player["sort_key"]:
-            new_rank = idx + 1
-            prev_key = player["sort_key"]
-
+    for player in results["players"].values():
+        new_rank = new_ranks[player["id"]]
         is_queen = " ♛ " if player["is_queen"] else " "
         old_rank = player_positions_before[player["id"]]
         rank_diff = abs(new_rank - old_rank)
