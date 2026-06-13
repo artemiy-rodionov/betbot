@@ -348,6 +348,27 @@ def test_compute_player_ranks_empty():
     assert helpers.compute_player_ranks([]) == {}
 
 
+def test_short_round():
+    matches = database.Matches(MATCH_DATA, TEAMS)
+    match = matches.getMatch("group_1-0")
+
+    def short(round_name):
+        match._round = round_name
+        return match.short_round()
+
+    # Known rounds use the lookup table.
+    assert short("Group A") == "A"
+    assert short("Final") == database.CUP
+    assert short("Round of 32") == "1/16"
+    # Group-stage rounds outside the table are shortened so the
+    # date/time still fits on the /bet buttons.
+    assert short("Group I") == "I"
+    assert short("Group Stage - 1") == "GS1"
+    assert short("League Stage - 2") == "LS2"
+    # Unknown rounds pass through unchanged.
+    assert short("Play-offs") == "Play-offs"
+
+
 def score_players(match_result, player_pred, other_players_preds):
     all_players = [*other_players_preds, player_pred]
     return match_result.score(player_pred, all_players)
