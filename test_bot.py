@@ -1,5 +1,7 @@
 from collections import namedtuple
 
+import pytest
+
 from betbot import database, helpers, messages
 
 FakeUser = namedtuple("FakeUser", ["id", "first_name", "last_name", "username"])
@@ -311,6 +313,63 @@ def test_clean_display_name():
 
     name, err = helpers.clean_display_name("x" * (helpers.MAX_NAME_LEN + 1))
     assert name is None and err == messages.NAME_TOO_LONG % helpers.MAX_NAME_LEN
+
+
+@pytest.mark.parametrize(
+    "players, expected",
+    [
+        # No ties: sequential ranks.
+        (
+            [
+                {"id": 1, "sort_key": (10, 3)},
+                {"id": 2, "sort_key": (7, 1)},
+                {"id": 3, "sort_key": (4, 0)},
+            ],
+            {1: 1, 2: 2, 3: 3},
+        ),
+        # Players 2 and 3 tied -> both rank 2; next player jumps to rank 4.
+        (
+            [
+                {"id": 1, "sort_key": (10, 3)},
+                {"id": 2, "sort_key": (7, 1)},
+                {"id": 3, "sort_key": (7, 1)},
+                {"id": 4, "sort_key": (4, 0)},
+            ],
+            {1: 1, 2: 2, 3: 2, 4: 4},
+        ),
+        # Equal score but different exact_score -> distinct ranks.
+        (
+            [
+                {"id": 1, "sort_key": (7, 2)},
+                {"id": 2, "sort_key": (7, 1)},
+            ],
+            {1: 1, 2: 2},
+        ),
+        # Everyone tied -> all rank 1.
+        (
+            [
+                {"id": 1, "sort_key": (5, 0)},
+                {"id": 2, "sort_key": (5, 0)},
+                {"id": 3, "sort_key": (5, 0)},
+            ],
+            {1: 1, 2: 1, 3: 1},
+        ),
+        # Two leading, then two tied at the bottom.
+        (
+            [
+                {"id": 1, "sort_key": (9, 2)},
+                {"id": 2, "sort_key": (8, 1)},
+                {"id": 3, "sort_key": (3, 0)},
+                {"id": 4, "sort_key": (3, 0)},
+            ],
+            {1: 1, 2: 2, 3: 3, 4: 3},
+        ),
+        # Empty input.
+        ([], {}),
+    ],
+)
+def test_compute_player_ranks(players, expected):
+    assert helpers.compute_player_ranks(players) == expected
 
 
 def test_short_round():
