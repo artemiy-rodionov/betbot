@@ -96,6 +96,7 @@ def convert_api_v3(config, data):
             match["type"] = "group"
             group_matches[fix_round].append(match)
         elif fix_round in (
+            "Round of 32",
             "Round of 16",
             "8th Finals",
             "Quarter-finals",
