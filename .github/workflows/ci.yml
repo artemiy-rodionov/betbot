@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # database.py reads these at import time via dynaconf (DYNACONF_* envvars).
+      DYNACONF_score_mode: default
+      DYNACONF_extra_score_mode: default
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Lint with ruff
+        run: uv run --group dev ruff check .
+
+      - name: Run tests
+        run: uv run --group dev pytest
