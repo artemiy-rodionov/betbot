@@ -106,10 +106,15 @@ def send_scores(
         )
     else:
         results_before_finished = results
-    player_positions_before = {
-        player["id"]: idx + 1
-        for idx, player in enumerate(results_before_finished["players"].values())
-    }
+
+    player_positions_before = {}
+    prev_key = None
+    rank = 0
+    for idx, player in enumerate(results_before_finished["players"].values()):
+        if prev_key != player["sort_key"]:
+            rank = idx + 1
+            prev_key = player["sort_key"]
+        player_positions_before[player["id"]] = rank
 
     text = f"{extra_msg}\n"
     if is_playoff:
@@ -117,9 +122,14 @@ def send_scores(
     else:
         text += "Таблица: \n"
     text += "\n```\n"
+    prev_key = None
+    new_rank = 0
     for idx, player in enumerate(results["players"].values()):
+        if prev_key != player["sort_key"]:
+            new_rank = idx + 1
+            prev_key = player["sort_key"]
+
         is_queen = " ♛ " if player["is_queen"] else " "
-        new_rank = idx + 1
         old_rank = player_positions_before[player["id"]]
         rank_diff = abs(new_rank - old_rank)
         if new_rank < old_rank:

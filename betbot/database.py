@@ -864,10 +864,11 @@ class Predictions(DbTable):
             results["players"][player.id()]["score"] = score
             results["players"][player.id()]["exact_score"] = exact_score
             results["players"][player.id()]["is_queen"] = player.is_queen()
+            results["players"][player.id()]["sort_key"] = (score, exact_score)
         results["players"] = dict(
             sorted(
                 results["players"].items(),
-                key=lambda x: (x[1]["score"], x[1]["exact_score"]),
+                key=lambda x: x[1]["sort_key"],
                 reverse=True,
             )
         )
