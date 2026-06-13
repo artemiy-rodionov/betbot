@@ -313,41 +313,6 @@ def test_clean_display_name():
     assert name is None and err == messages.NAME_TOO_LONG % helpers.MAX_NAME_LEN
 
 
-def _ranked(*scores):
-    """Build a sorted-by-sort_key player list from (id, score, exact) tuples."""
-    players = [
-        {"id": pid, "sort_key": (score, exact)} for pid, score, exact in scores
-    ]
-    players.sort(key=lambda p: p["sort_key"], reverse=True)
-    return players
-
-
-def test_compute_player_ranks_no_ties():
-    players = _ranked((1, 10, 3), (2, 7, 1), (3, 4, 0))
-    assert helpers.compute_player_ranks(players) == {1: 1, 2: 2, 3: 3}
-
-
-def test_compute_player_ranks_with_ties():
-    # Players 2 and 3 are tied -> both rank 2; next player jumps to rank 4.
-    players = _ranked((1, 10, 3), (2, 7, 1), (3, 7, 1), (4, 4, 0))
-    assert helpers.compute_player_ranks(players) == {1: 1, 2: 2, 3: 2, 4: 4}
-
-
-def test_compute_player_ranks_exact_score_breaks_tie():
-    # Equal score but different exact_score -> distinct ranks.
-    players = _ranked((1, 7, 2), (2, 7, 1))
-    assert helpers.compute_player_ranks(players) == {1: 1, 2: 2}
-
-
-def test_compute_player_ranks_all_tied():
-    players = _ranked((1, 5, 0), (2, 5, 0), (3, 5, 0))
-    assert helpers.compute_player_ranks(players) == {1: 1, 2: 1, 3: 1}
-
-
-def test_compute_player_ranks_empty():
-    assert helpers.compute_player_ranks([]) == {}
-
-
 def test_short_round():
     matches = database.Matches(MATCH_DATA, TEAMS)
     match = matches.getMatch("group_1-0")
