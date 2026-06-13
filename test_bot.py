@@ -328,8 +328,8 @@ def test_short_round():
     # Group-stage rounds outside the table are shortened so the
     # date/time still fits on the /bet buttons.
     assert short("Group I") == "I"
-    assert short("Group Stage - 1") == "1"
-    assert short("League Stage - 2") == "2"
+    assert short("Group Stage - 1") == "GS1"
+    assert short("League Stage - 2") == "LS2"
     # Unknown rounds pass through unchanged.
     assert short("Play-offs") == "Play-offs"
 
