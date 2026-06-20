@@ -182,7 +182,34 @@ def send_scores(
     )
 
 
-def send_match_event(bot, db, config, match, event):
+def sample_match_events(team_id):
+    """Representative fixture events for previewing notifications by hand.
+
+    One per branch that send_match_event actually renders, so an admin can
+    see exactly how goals, VAR decisions and red cards look in Telegram.
+    """
+
+    def ev(ev_type, detail, player=None, elapsed=23, extra=None):
+        return {
+            "type": ev_type,
+            "detail": detail,
+            "team": {"id": team_id},
+            "player": {"name": player},
+            "time": {"elapsed": elapsed, "extra": extra},
+        }
+
+    return [
+        ev("Goal", "Normal Goal", "Messi", 12),
+        ev("Goal", "Own Goal", "Ramos", 27),
+        ev("Goal", "Penalty", "Mbappe", 41),
+        ev("Goal", "Missed Penalty", "Kane", 55),
+        ev("Var", "Goal cancelled", "Haaland", 63),
+        ev("Var", "Penalty confirmed", None, 70),
+        ev("Card", "Red card", "Suarez", 84, 2),
+    ]
+
+
+def send_match_event(bot, db, config, match, event, group_id=None):
     ev_type = event["type"]
     detail = event["detail"]
     team = db.teams.get_team(event["team"]["id"])
@@ -204,40 +231,21 @@ def send_match_event(bot, db, config, match, event):
         text = f"{prefix} {time}: {event['player']['name']} - {team.label()}"
 
     elif ev_type == "Var":
-        text = f"📺 {time}: {event['detail']} - {team.label()}"
+        # VAR decisions (e.g. "Goal cancelled", "Penalty confirmed") reference
+        # the affected player when there is one.
+        player = (event.get("player") or {}).get("name")
+        who = f"{player} - " if player else ""
+        text = f"📺 {time}: {event['detail']} - {who}{team.label()}"
     elif ev_type == "Card" and detail == "Red card":
         text = f"🟥 {time}: {event['player']['name']} - {team.label()}"
     else:
         return
 
-    group_id = config["group_id"]
+    if group_id is None:
+        group_id = config["group_id"]
     bot.send_message(
         group_id,
         text,
-    )
-
-
-def send_standings(bot, db, config, reply_message=None):
-    text = "\nТаблица Чемпионата: \n"
-    if not db.standings:
-        text += "Таблица пока не загружена"
-
-    else:
-        text += "\n```\n"
-        standings = db.standings.get_standings()
-        for team in standings:
-            text += f"{team['rank']}. {team['team']['name']} - {team['points']} ({team['form']})"
-            text += "\n"
-        text += "\n```\n"
-        text += f"Последнее обновление: {standings[0]['update']}"
-    group_id = config["group_id"]
-    if reply_message is not None:
-        group_id = reply_message.chat.id
-    bot.send_message(
-        group_id,
-        text,
-        reply_to_message_id=reply_message.message_id if reply_message else None,
-        parse_mode="Markdown",
     )
 
 

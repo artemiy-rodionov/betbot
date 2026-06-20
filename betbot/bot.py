@@ -179,11 +179,6 @@ def playoff_scores(message):
     )
 
 
-@bot.message_handler(commands=["standings"])
-def standings(message):
-    helpers.send_standings(bot, db_helper.get_db(), config, reply_message=message)
-
-
 @bot.message_handler(
     commands=["sendLast"], func=lambda m: db_helper.is_admin(m.from_user)
 )
@@ -474,12 +469,46 @@ def cmd_update_fixtures(message):
 
 
 @bot.message_handler(
-    commands=["updateStandings"], func=lambda m: db_helper.is_admin(m.from_user)
+    commands=["testEvents"], func=lambda m: db_helper.is_admin(m.from_user)
 )
-def cmd_update_standings(message):
-    commands.update_standings()
-    db_helper.get_db().reload_standings()
-    bot.send_message(message.chat.id, "Success")
+def cmd_test_events(message):
+    """Post sample fixture events to this chat to preview their formatting."""
+    db = db_helper.get_db()
+    team_ids = list(db.teams.teams.keys())
+    if not team_ids:
+        bot.send_message(message.chat.id, "Нет загруженных команд для теста")
+        return
+    bot.send_message(message.chat.id, "🧪 Пример событий матча:")
+    for event in helpers.sample_match_events(team_ids[0]):
+        helpers.send_match_event(
+            bot, db, config, None, event, group_id=message.chat.id
+        )
+
+
+@bot.message_handler(
+    commands=["testEventsFile"], func=lambda m: db_helper.is_admin(m.from_user)
+)
+def cmd_test_events_file(message):
+    """Write sample events to the shared file, then read them back and post.
+
+    Exercises the real updater -> shared file -> get_stored_events -> send path.
+    """
+    db = db_helper.get_db()
+    matches = list(db.matches.matches.values())
+    if not matches:
+        bot.send_message(message.chat.id, "Нет матчей для теста")
+        return
+    match = matches[0]
+    events = helpers.sample_match_events(match.team(0).id())
+    sources.set_fixture_events(config, match.id(), events)
+    bot.send_message(
+        message.chat.id,
+        f"🧪 Записал события в общий файл для матча {match.id()}, читаю обратно:",
+    )
+    for event in sources.get_stored_events(config, match.id()):
+        helpers.send_match_event(
+            bot, db, config, None, event, group_id=message.chat.id
+        )
 
 
 def _request_action_keyboard(uid):
@@ -902,7 +931,9 @@ class UpdateJob:
 
     def _send_fixture_events(self, db, match):
         logger.info(f"Send fixture events for match {match.id()}")
-        events = sources.get_fixture_events(config, match.id())
+        # Read from the shared snapshot written by the single updater rather
+        # than calling the API per bot. Dedup stays in-memory per process.
+        events = sources.get_stored_events(config, match.id())
         for ev in events:
             if ev in self.MATCH_PROCESSED_EVENTS[match.id()]:
                 continue

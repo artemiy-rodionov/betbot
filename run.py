@@ -36,10 +36,15 @@ if __name__ == "__main__":
         type=date_arg,
     )
     parser.add_argument(
-        "--update", help="Update json results and exit", action="store_true"
+        "--update",
+        help="Run the config-driven updater (all due resources) and exit",
+        action="store_true",
     )
     parser.add_argument(
-        "--update-standings", help="Update standings and exit", action="store_true"
+        "--update-fixtures", help="Update fixtures only and exit", action="store_true"
+    )
+    parser.add_argument(
+        "--update-events", help="Update events only and exit", action="store_true"
     )
     parser.add_argument(
         "--chart-race", help="Build chart race file and exit", action="store_true"
@@ -50,9 +55,11 @@ if __name__ == "__main__":
     elif args.dump:
         result = commands.dump_info()
     elif args.update:
+        result = commands.update_all()
+    elif args.update_fixtures:
         result = commands.update_fixtures()
-    elif args.update_standings:
-        result = commands.update_standings()
+    elif args.update_events:
+        result = commands.update_events()
     elif args.chart_race:
         import chart_race
 

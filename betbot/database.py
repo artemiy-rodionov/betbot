@@ -68,15 +68,6 @@ class Database(object):
         self.pending_requests = PendingRequests(self._db_path)
         self.predictions = Predictions(self._db_path, self.players, self.matches)
 
-    def reload_standings(self):
-        try:
-            standings_data = sources.load_standings(self.config)
-        except Exception:
-            logger.exception("Error loading standings")
-            self.standings = None
-            return
-        self.standings = Standings(standings_data)
-
 
 class Team(object):
     @staticmethod
@@ -897,9 +888,3 @@ class Predictions(DbTable):
             return [row[0] for row in rows]
 
 
-class Standings:
-    def __init__(self, standings_data):
-        self.standings = standings_data
-
-    def get_standings(self):
-        return self.standings
