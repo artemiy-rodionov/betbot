@@ -914,6 +914,19 @@ class UpdateJob:
         }
         logger.info(f"Found matches day to remind: {cls.MATCHES_DAY_TO_REMIND}")
 
+        # Seed already-stored events for in-progress matches WITHOUT sending
+        # them, so a (re)start never re-posts the event history from the shared
+        # file. Only events appended after this point get sent. The processed
+        # set is in-memory, so it starts empty on a fresh process. Reads the
+        # local shared file, so this costs no API calls.
+        cls.MATCH_PROCESSED_EVENTS = defaultdict(list)
+        if EVENTS_ENABLED:
+            for mid in cls.MATCHES_IN_PROGRESS:
+                cls.MATCH_PROCESSED_EVENTS[mid] = list(
+                    sources.get_stored_events(config, mid)
+                )
+            logger.info("Primed processed events for in-progress matches")
+
     def _remind_players(self, db, match, msg):
         for player_id in db.predictions.getMissingPlayers(match.id()):
             player = db.players.getPlayer(player_id)
