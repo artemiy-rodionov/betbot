@@ -1,8 +1,11 @@
+import datetime
+import json
 from collections import namedtuple
 
 import pytest
+import pytz
 
-from betbot import database, helpers, messages
+from betbot import conf, database, helpers, messages, sources
 
 FakeUser = namedtuple("FakeUser", ["id", "first_name", "last_name", "username"])
 
@@ -602,3 +605,445 @@ def test_playoff_score_fsnorm(monkeypatch):
         score_players(result_penalty, database.Result(1, 1, 2), [database.Result(2, 3)])
         == 2.0
     )
+
+
+# ---------------------------------------------------------------------------
+# Live match events ("goals feature")
+#
+# Covers the path: bot polls api-football -> sources.get_fixture_events ->
+# helpers.send_match_event -> Telegram message. These exercise the formatting
+# and the API error handling without touching the network.
+# ---------------------------------------------------------------------------
+
+EVENTS_GROUP_ID = -1001179590532
+EVENTS_CONFIG = {"group_id": EVENTS_GROUP_ID}
+
+
+class FakeTeam:
+    def __init__(self, label="ARG"):
+        self._label = label
+
+    def label(self):
+        return self._label
+
+
+class FakeTeams:
+    def __init__(self, label="ARG"):
+        self._team = FakeTeam(label)
+        self.requested = []
+
+    def get_team(self, team_id):
+        self.requested.append(team_id)
+        return self._team
+
+
+class FakeDb:
+    def __init__(self, label="ARG"):
+        self.teams = FakeTeams(label)
+
+
+class FakeBot:
+    def __init__(self):
+        self.sent = []
+
+    def send_message(self, group_id, text, **kwargs):
+        self.sent.append((group_id, text))
+
+
+def make_event(
+    ev_type="Goal",
+    detail="Normal Goal",
+    elapsed=23,
+    extra=None,
+    player="Messi",
+    team_id="Team1",
+):
+    """Shape mirrors api-football v3 fixtures/events entries."""
+    return {
+        "type": ev_type,
+        "detail": detail,
+        "team": {"id": team_id},
+        "player": {"name": player},
+        "time": {"elapsed": elapsed, "extra": extra},
+    }
+
+
+@pytest.mark.parametrize(
+    "detail,expected",
+    [
+        ("Normal Goal", "⚽ 23': Messi - ARG"),
+        ("Own Goal", "⚽(\U0001f926) 23': Messi - ARG"),
+        ("Penalty", "⚽(1️⃣ 1️⃣) 23': Messi - ARG"),
+        ("Missed Penalty", "\U0001f6ab⚽(1️⃣1️⃣)  23': Messi - ARG"),
+    ],
+)
+def test_send_match_event_goal_variants(detail, expected):
+    bot = FakeBot()
+    helpers.send_match_event(
+        bot, FakeDb("ARG"), EVENTS_CONFIG, None, make_event(detail=detail)
+    )
+    assert bot.sent == [(EVENTS_GROUP_ID, expected)]
+
+
+def test_send_match_event_extra_time_formatting():
+    bot = FakeBot()
+    helpers.send_match_event(
+        bot, FakeDb(), EVENTS_CONFIG, None, make_event(elapsed=90, extra=4)
+    )
+    assert bot.sent == [(EVENTS_GROUP_ID, "⚽ 90+4': Messi - ARG")]
+
+
+def test_send_match_event_red_card():
+    bot = FakeBot()
+    helpers.send_match_event(
+        bot,
+        FakeDb(),
+        EVENTS_CONFIG,
+        None,
+        make_event(ev_type="Card", detail="Red card", player="Ramos"),
+    )
+    assert bot.sent == [(EVENTS_GROUP_ID, "\U0001f7e5 23': Ramos - ARG")]
+
+
+def test_send_match_event_var_includes_player():
+    bot = FakeBot()
+    helpers.send_match_event(
+        bot,
+        FakeDb(),
+        EVENTS_CONFIG,
+        None,
+        make_event(ev_type="Var", detail="Goal cancelled", player="Messi"),
+    )
+    assert bot.sent == [
+        (EVENTS_GROUP_ID, "\U0001f4fa 23': Goal cancelled - Messi - ARG")
+    ]
+
+
+def test_send_match_event_var_without_player():
+    bot = FakeBot()
+    event = make_event(ev_type="Var", detail="Penalty confirmed")
+    event["player"] = {"id": None, "name": None}
+    helpers.send_match_event(bot, FakeDb(), EVENTS_CONFIG, None, event)
+    assert bot.sent == [(EVENTS_GROUP_ID, "\U0001f4fa 23': Penalty confirmed - ARG")]
+
+
+def test_send_match_event_resolves_team_by_id():
+    bot = FakeBot()
+    db = FakeDb()
+    helpers.send_match_event(
+        bot, db, EVENTS_CONFIG, None, make_event(team_id="Team7")
+    )
+    assert db.teams.requested == ["Team7"]
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        make_event(ev_type="Goal", detail="Goal Disallowed"),  # unknown goal detail
+        make_event(ev_type="Card", detail="Yellow card"),  # only red cards notify
+        make_event(ev_type="subst", detail="Substitution 1"),  # ignored type
+    ],
+)
+def test_send_match_event_ignored_events_send_nothing(event):
+    bot = FakeBot()
+    helpers.send_match_event(bot, FakeDb(), EVENTS_CONFIG, None, event)
+    assert bot.sent == []
+
+
+EVENTS_TEST_MODE_CONFIG = {"group_id": EVENTS_GROUP_ID, "events_test_mode": True}
+
+
+@pytest.mark.parametrize(
+    "event,expected",
+    [
+        (
+            make_event(ev_type="Card", detail="Yellow card", player="Ramos"),
+            "🧪 23': Card/Yellow card - Ramos - ARG",
+        ),
+        (
+            make_event(ev_type="subst", detail="Substitution 1", player=None),
+            "🧪 23': subst/Substitution 1 - ARG",
+        ),
+    ],
+)
+def test_send_match_event_test_mode_shows_filtered_events(event, expected):
+    bot = FakeBot()
+    helpers.send_match_event(bot, FakeDb(), EVENTS_TEST_MODE_CONFIG, None, event)
+    assert bot.sent == [(EVENTS_GROUP_ID, expected)]
+
+
+def test_send_match_event_test_mode_keeps_normal_format_for_known():
+    bot = FakeBot()
+    helpers.send_match_event(bot, FakeDb(), EVENTS_TEST_MODE_CONFIG, None, make_event())
+    assert bot.sent == [(EVENTS_GROUP_ID, "⚽ 23': Messi - ARG")]
+
+
+def test_get_fixture_events_returns_api_response(monkeypatch):
+    events = [make_event(), make_event(detail="Penalty")]
+    monkeypatch.setattr(
+        sources, "api_football", lambda config, resource, query: events
+    )
+    assert sources.get_fixture_events({}, 42) == events
+
+
+def test_get_fixture_events_queries_correct_endpoint(monkeypatch):
+    captured = {}
+
+    def fake_api(config, resource, query):
+        captured["resource"] = resource
+        captured["query"] = query
+        return []
+
+    monkeypatch.setattr(sources, "api_football", fake_api)
+    sources.get_fixture_events({}, 99)
+    assert captured["resource"] == "fixtures/events"
+    assert captured["query"] == {"fixture": 99}
+
+
+def test_get_fixture_events_swallows_value_error(monkeypatch):
+    def boom(config, resource, query):
+        raise ValueError("RapidAPI error")
+
+    monkeypatch.setattr(sources, "api_football", boom)
+    # No events / quota / auth failure must degrade to an empty list, not raise.
+    assert sources.get_fixture_events({}, 42) == []
+
+
+class FakeResponse:
+    def __init__(self, data):
+        self._data = data
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._data
+
+
+def test_api_football_returns_response_on_results(monkeypatch):
+    payload = {"results": 2, "response": [{"a": 1}, {"b": 2}]}
+    monkeypatch.setattr(
+        sources.requests,
+        "get",
+        lambda url, headers=None, params=None: FakeResponse(payload),
+    )
+    out = sources.api_football(
+        {"api_token": "x"}, "fixtures/events", {"fixture": 1}
+    )
+    assert out == [{"a": 1}, {"b": 2}]
+
+
+def test_api_football_raises_on_zero_results(monkeypatch):
+    payload = {"results": 0, "errors": {"token": "invalid"}, "response": []}
+    monkeypatch.setattr(
+        sources.requests,
+        "get",
+        lambda url, headers=None, params=None: FakeResponse(payload),
+    )
+    with pytest.raises(ValueError):
+        sources.api_football({"api_token": "x"}, "fixtures/events", {"fixture": 1})
+
+
+# ---------------------------------------------------------------------------
+# Shared event storage (single updater writes JSON; both bots read it)
+# ---------------------------------------------------------------------------
+
+# Fixed "now" for event-window tests; window is 3h after kickoff.
+FIXED_NOW = pytz.utc.localize(datetime.datetime(2026, 6, 11, 18, 0))
+
+
+def _events_config(tmp_path):
+    return {"data_dir": str(tmp_path), "league_id": 1, "season": 2026}
+
+
+def _raw_fixture(fid, status="NS", date="2026-06-11T17:00:00+00:00"):
+    return {"fixture": {"id": fid, "status": {"short": status}, "date": date}}
+
+
+def _write_raw_fixtures(tmp_path, fixtures):
+    with open(tmp_path / "fixtures-1-2026.json", "w") as fp:
+        json.dump(fixtures, fp)
+
+
+def test_load_events_missing_returns_empty(tmp_path):
+    config = _events_config(tmp_path)
+    assert sources.load_events(config) == {}
+    assert sources.get_stored_events(config, 99) == []
+
+
+def test_get_stored_events_accepts_int_and_str_ids(tmp_path):
+    config = _events_config(tmp_path)
+    with open(tmp_path / "events-1-2026.json", "w") as fp:
+        json.dump({"10": [{"type": "Goal"}]}, fp)
+    assert sources.get_stored_events(config, 10) == [{"type": "Goal"}]
+    assert sources.get_stored_events(config, "10") == [{"type": "Goal"}]
+    assert sources.get_stored_events(config, 11) == []
+
+
+def test_save_events_fetches_only_matches_in_window(tmp_path, monkeypatch):
+    config = _events_config(tmp_path)
+    monkeypatch.setattr(sources.utils, "utcnow", lambda: FIXED_NOW)
+    # now = 18:00; window = kickoff .. kickoff+3h
+    _write_raw_fixtures(
+        tmp_path,
+        [
+            _raw_fixture(10, "NS", "2026-06-11T17:00:00+00:00"),  # 1h in -> fetch
+            _raw_fixture(20, "NS", "2026-06-11T20:00:00+00:00"),  # future -> skip
+            _raw_fixture(30, "NS", "2026-06-11T14:00:00+00:00"),  # window ended -> skip
+            _raw_fixture(40, "FT", "2026-06-11T17:00:00+00:00"),  # finished -> skip
+        ],
+    )
+    calls = []
+
+    def fake_events(cfg, fid):
+        calls.append(fid)
+        return [make_event(player="P%s" % fid)]
+
+    monkeypatch.setattr(sources, "get_fixture_events", fake_events)
+    sources.save_events(config)
+
+    # No fixtures API call happened — only one events call, for the in-window match.
+    assert calls == [10]
+    assert set(sources.load_events(config).keys()) == {"10"}
+    assert sources.get_stored_events(config, 10) == [make_event(player="P10")]
+
+
+def test_save_events_keeps_last_snapshot_after_match_finishes(tmp_path, monkeypatch):
+    config = _events_config(tmp_path)
+    monkeypatch.setattr(sources.utils, "utcnow", lambda: FIXED_NOW)
+    # fixture 30's last snapshot, stored on a previous run
+    with open(tmp_path / "events-1-2026.json", "w") as fp:
+        json.dump({"30": [{"old": True}]}, fp)
+    _write_raw_fixtures(
+        tmp_path,
+        [
+            _raw_fixture(30, "FT", "2026-06-11T17:00:00+00:00"),  # finished -> skip
+            _raw_fixture(10, "NS", "2026-06-11T17:30:00+00:00"),  # in window -> fetch
+        ],
+    )
+    calls = []
+
+    def fake_events(cfg, fid):
+        calls.append(fid)
+        return [make_event(player="P%s" % fid)]
+
+    monkeypatch.setattr(sources, "get_fixture_events", fake_events)
+    sources.save_events(config)
+
+    # finished (30) not refetched but its snapshot is preserved; live (10) refetched
+    assert calls == [10]
+    stored = sources.load_events(config)
+    assert stored["30"] == [{"old": True}]
+    assert stored["10"] == [make_event(player="P10")]
+
+
+def test_save_events_atomic_write_leaves_no_temp_files(tmp_path, monkeypatch):
+    config = _events_config(tmp_path)
+    monkeypatch.setattr(sources.utils, "utcnow", lambda: FIXED_NOW)
+    _write_raw_fixtures(tmp_path, [_raw_fixture(10, "NS", "2026-06-11T17:00:00+00:00")])
+    monkeypatch.setattr(sources, "get_fixture_events", lambda cfg, fid: [])
+    sources.save_events(config)
+    names = [p.name for p in tmp_path.iterdir()]
+    assert "events-1-2026.json" in names
+    assert not [n for n in names if n.endswith(".tmp")]
+
+
+def test_get_data_file_uses_shared_dir_when_set():
+    config = {
+        "data_dir": "/inst",
+        "shared_dir": "/shared",
+        "league_id": 1,
+        "season": 2026,
+    }
+    assert conf.get_data_file(config, "events") == "/shared/events-1-2026.json"
+    assert conf.get_data_file(config, "fixtures") == "/shared/fixtures-1-2026.json"
+
+
+def test_get_data_file_falls_back_to_data_dir():
+    config = {"data_dir": "/inst", "league_id": 1, "season": 2026}
+    assert conf.get_data_file(config, "events") == "/inst/events-1-2026.json"
+
+
+def _updater_config(tmp_path, intervals):
+    return {
+        "data_dir": str(tmp_path),
+        "league_id": 1,
+        "season": 2026,
+        "update_intervals": intervals,
+    }
+
+
+def _patch_updaters(monkeypatch):
+    from betbot import commands
+
+    calls = []
+    monkeypatch.setattr(commands.utils, "utcnow", lambda: FIXED_NOW)
+    monkeypatch.setitem(
+        commands._RESOURCE_UPDATERS, "fixtures", lambda c: calls.append("fixtures")
+    )
+    monkeypatch.setitem(
+        commands._RESOURCE_UPDATERS, "events", lambda c: calls.append("events")
+    )
+    return commands, calls
+
+
+def test_update_all_runs_due_resources_and_records_state(tmp_path, monkeypatch):
+    commands, calls = _patch_updaters(monkeypatch)
+    cfg = _updater_config(tmp_path, {"fixtures": 15, "events": 3})
+    commands.update_all(cfg)
+    assert calls == ["fixtures", "events"]
+    state = sources.load_update_state(cfg)
+    assert set(state.keys()) == {"fixtures", "events"}
+
+
+def test_update_all_throttles_each_resource_by_interval(tmp_path, monkeypatch):
+    commands, calls = _patch_updaters(monkeypatch)
+    cfg = _updater_config(tmp_path, {"fixtures": 15, "events": 3})
+    five_min_ago = (FIXED_NOW - datetime.timedelta(minutes=5)).isoformat()
+    sources.save_update_state(cfg, {"fixtures": five_min_ago, "events": five_min_ago})
+    commands.update_all(cfg)
+    # after 5 min: events (every 3) is due, fixtures (every 15) is not
+    assert calls == ["events"]
+
+
+def test_update_all_skips_unconfigured_resources(tmp_path, monkeypatch):
+    commands, calls = _patch_updaters(monkeypatch)
+    cfg = _updater_config(tmp_path, {"events": 3})
+    commands.update_all(cfg)
+    assert calls == ["events"]
+
+
+def test_send_match_event_group_id_override():
+    # The /testEvents preview posts to the invoking chat, not the configured group.
+    bot = FakeBot()
+    helpers.send_match_event(
+        bot, FakeDb(), EVENTS_CONFIG, None, make_event(), group_id=999
+    )
+    assert bot.sent == [(999, "⚽ 23': Messi - ARG")]
+
+
+def test_sample_match_events_all_render():
+    bot = FakeBot()
+    db = FakeDb("ARG")
+    events = helpers.sample_match_events(team_id="T1")
+    for event in events:
+        helpers.send_match_event(bot, db, EVENTS_CONFIG, None, event, group_id=1)
+    # Preview set contains only rendered types, so every sample produces a message.
+    assert len(bot.sent) == len(events)
+    texts = [t for _, t in bot.sent]
+    assert texts[0] == "⚽ 12': Messi - ARG"
+    assert any(t.startswith("📺") for t in texts)  # VAR
+    assert any(t.startswith("🟥") for t in texts)  # red card
+    # All events resolve the given team through db.teams.
+    assert db.teams.requested == ["T1"] * len(events)
+
+
+def test_set_fixture_events_round_trips_through_shared_file(tmp_path):
+    config = {"data_dir": str(tmp_path), "league_id": 1, "season": 2026}
+    # pre-existing events for another fixture must be preserved (merge, not clobber)
+    with open(tmp_path / "events-1-2026.json", "w") as fp:
+        json.dump({"50": [{"type": "Goal"}]}, fp)
+    events = helpers.sample_match_events(team_id="T1")
+    sources.set_fixture_events(config, 100, events)
+    assert sources.get_stored_events(config, 100) == events
+    assert sources.get_stored_events(config, 50) == [{"type": "Goal"}]

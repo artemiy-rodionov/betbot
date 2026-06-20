@@ -182,62 +182,73 @@ def send_scores(
     )
 
 
-def send_match_event(bot, db, config, match, event):
+def sample_match_events(team_id):
+    """Representative fixture events for previewing notifications by hand.
+
+    One per branch that send_match_event actually renders, so an admin can
+    see exactly how goals, VAR decisions and red cards look in Telegram.
+    """
+
+    def ev(ev_type, detail, player=None, elapsed=23, extra=None):
+        return {
+            "type": ev_type,
+            "detail": detail,
+            "team": {"id": team_id},
+            "player": {"name": player},
+            "time": {"elapsed": elapsed, "extra": extra},
+        }
+
+    return [
+        ev("Goal", "Normal Goal", "Messi", 12),
+        ev("Goal", "Own Goal", "Ramos", 27),
+        ev("Goal", "Penalty", "Mbappe", 41),
+        ev("Goal", "Missed Penalty", "Kane", 55),
+        ev("Var", "Goal cancelled", "Haaland", 63),
+        ev("Var", "Penalty confirmed", None, 70),
+        ev("Card", "Red card", "Suarez", 84, 2),
+    ]
+
+
+def send_match_event(bot, db, config, match, event, group_id=None):
     ev_type = event["type"]
     detail = event["detail"]
     team = db.teams.get_team(event["team"]["id"])
+    player = (event.get("player") or {}).get("name")
     time = f"{event['time']['elapsed']}"
     if event["time"]["extra"] is not None:
         time += f"+{event['time']['extra']}"
     time += "'"
+    text = None
     if ev_type == "Goal":
-        if detail == "Normal Goal":
-            prefix = "⚽"
-        elif detail == "Own Goal":
-            prefix = "⚽(🤦)"
-        elif detail == "Penalty":
-            prefix = "⚽(1️⃣ 1️⃣)"
-        elif detail == "Missed Penalty":
-            prefix = "🚫⚽(1️⃣1️⃣) "
-        else:
-            return
-        text = f"{prefix} {time}: {event['player']['name']} - {team.label()}"
-
+        prefix = {
+            "Normal Goal": "⚽",
+            "Own Goal": "⚽(🤦)",
+            "Penalty": "⚽(1️⃣ 1️⃣)",
+            "Missed Penalty": "🚫⚽(1️⃣1️⃣) ",
+        }.get(detail)
+        if prefix is not None:
+            text = f"{prefix} {time}: {player} - {team.label()}"
     elif ev_type == "Var":
-        text = f"📺 {time}: {event['detail']} - {team.label()}"
+        # VAR decisions (e.g. "Goal cancelled", "Penalty confirmed") reference
+        # the affected player when there is one.
+        who = f"{player} - " if player else ""
+        text = f"📺 {time}: {detail} - {who}{team.label()}"
     elif ev_type == "Card" and detail == "Red card":
-        text = f"🟥 {time}: {event['player']['name']} - {team.label()}"
-    else:
-        return
+        text = f"🟥 {time}: {player} - {team.label()}"
 
-    group_id = config["group_id"]
+    if text is None:
+        # Not a normally-notified event. In events_test_mode post it anyway,
+        # with a generic label, so the full event stream is visible.
+        if not config.get("events_test_mode"):
+            return
+        who = f"{player} - " if player else ""
+        text = f"🧪 {time}: {ev_type}/{detail} - {who}{team.label()}"
+
+    if group_id is None:
+        group_id = config["group_id"]
     bot.send_message(
         group_id,
         text,
-    )
-
-
-def send_standings(bot, db, config, reply_message=None):
-    text = "\nТаблица Чемпионата: \n"
-    if not db.standings:
-        text += "Таблица пока не загружена"
-
-    else:
-        text += "\n```\n"
-        standings = db.standings.get_standings()
-        for team in standings:
-            text += f"{team['rank']}. {team['team']['name']} - {team['points']} ({team['form']})"
-            text += "\n"
-        text += "\n```\n"
-        text += f"Последнее обновление: {standings[0]['update']}"
-    group_id = config["group_id"]
-    if reply_message is not None:
-        group_id = reply_message.chat.id
-    bot.send_message(
-        group_id,
-        text,
-        reply_to_message_id=reply_message.message_id if reply_message else None,
-        parse_mode="Markdown",
     )
 
 
