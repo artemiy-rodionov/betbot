@@ -750,6 +750,34 @@ def test_send_match_event_ignored_events_send_nothing(event):
     assert bot.sent == []
 
 
+EVENTS_TEST_MODE_CONFIG = {"group_id": EVENTS_GROUP_ID, "events_test_mode": True}
+
+
+@pytest.mark.parametrize(
+    "event,expected",
+    [
+        (
+            make_event(ev_type="Card", detail="Yellow card", player="Ramos"),
+            "🧪 23': Card/Yellow card - Ramos - ARG",
+        ),
+        (
+            make_event(ev_type="subst", detail="Substitution 1", player=None),
+            "🧪 23': subst/Substitution 1 - ARG",
+        ),
+    ],
+)
+def test_send_match_event_test_mode_shows_filtered_events(event, expected):
+    bot = FakeBot()
+    helpers.send_match_event(bot, FakeDb(), EVENTS_TEST_MODE_CONFIG, None, event)
+    assert bot.sent == [(EVENTS_GROUP_ID, expected)]
+
+
+def test_send_match_event_test_mode_keeps_normal_format_for_known():
+    bot = FakeBot()
+    helpers.send_match_event(bot, FakeDb(), EVENTS_TEST_MODE_CONFIG, None, make_event())
+    assert bot.sent == [(EVENTS_GROUP_ID, "⚽ 23': Messi - ARG")]
+
+
 def test_get_fixture_events_returns_api_response(monkeypatch):
     events = [make_event(), make_event(detail="Penalty")]
     monkeypatch.setattr(

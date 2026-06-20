@@ -213,33 +213,36 @@ def send_match_event(bot, db, config, match, event, group_id=None):
     ev_type = event["type"]
     detail = event["detail"]
     team = db.teams.get_team(event["team"]["id"])
+    player = (event.get("player") or {}).get("name")
     time = f"{event['time']['elapsed']}"
     if event["time"]["extra"] is not None:
         time += f"+{event['time']['extra']}"
     time += "'"
+    text = None
     if ev_type == "Goal":
-        if detail == "Normal Goal":
-            prefix = "⚽"
-        elif detail == "Own Goal":
-            prefix = "⚽(🤦)"
-        elif detail == "Penalty":
-            prefix = "⚽(1️⃣ 1️⃣)"
-        elif detail == "Missed Penalty":
-            prefix = "🚫⚽(1️⃣1️⃣) "
-        else:
-            return
-        text = f"{prefix} {time}: {event['player']['name']} - {team.label()}"
-
+        prefix = {
+            "Normal Goal": "⚽",
+            "Own Goal": "⚽(🤦)",
+            "Penalty": "⚽(1️⃣ 1️⃣)",
+            "Missed Penalty": "🚫⚽(1️⃣1️⃣) ",
+        }.get(detail)
+        if prefix is not None:
+            text = f"{prefix} {time}: {player} - {team.label()}"
     elif ev_type == "Var":
         # VAR decisions (e.g. "Goal cancelled", "Penalty confirmed") reference
         # the affected player when there is one.
-        player = (event.get("player") or {}).get("name")
         who = f"{player} - " if player else ""
-        text = f"📺 {time}: {event['detail']} - {who}{team.label()}"
+        text = f"📺 {time}: {detail} - {who}{team.label()}"
     elif ev_type == "Card" and detail == "Red card":
-        text = f"🟥 {time}: {event['player']['name']} - {team.label()}"
-    else:
-        return
+        text = f"🟥 {time}: {player} - {team.label()}"
+
+    if text is None:
+        # Not a normally-notified event. In events_test_mode post it anyway,
+        # with a generic label, so the full event stream is visible.
+        if not config.get("events_test_mode"):
+            return
+        who = f"{player} - " if player else ""
+        text = f"🧪 {time}: {ev_type}/{detail} - {who}{team.label()}"
 
     if group_id is None:
         group_id = config["group_id"]

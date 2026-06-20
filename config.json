@@ -1,5 +1,7 @@
 {
  "data_dir": "instance",
+ # dir for match data shared between bots (fixtures, events); falls back to data_dir
+ "shared_dir": "instance",
  "log_file": "instance/betting.log",
  "countries_file": "data/countries.json",
  "token": "",
@@ -15,8 +17,12 @@
  "score_mode": "default",
  # send fixture events
  "events_enabled": false,
+ # test mode: post ALL events unfiltered (incl. yellow cards, subs) with a generic label
+ "events_test_mode": false,
  # send playoff table
  "playoff_table_enabled": false,
+ # updater only: minutes between API refreshes per resource (omit/0 to skip)
+ "update_intervals": { "fixtures": 15, "events": 3 },
  "league_id": <api-football-league-id>,
  "season": <api-footbal-season>
 }
