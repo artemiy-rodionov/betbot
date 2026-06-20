@@ -950,11 +950,11 @@ def _patch_updaters(monkeypatch):
 
     calls = []
     monkeypatch.setattr(commands.utils, "utcnow", lambda: FIXED_NOW)
-    monkeypatch.setattr(
-        commands.sources, "save_fixtures", lambda c: calls.append("fixtures")
+    monkeypatch.setitem(
+        commands._RESOURCE_UPDATERS, "fixtures", lambda c: calls.append("fixtures")
     )
-    monkeypatch.setattr(
-        commands.sources, "save_events", lambda c: calls.append("events")
+    monkeypatch.setitem(
+        commands._RESOURCE_UPDATERS, "events", lambda c: calls.append("events")
     )
     return commands, calls
 

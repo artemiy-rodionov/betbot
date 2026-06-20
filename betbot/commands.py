@@ -35,10 +35,10 @@ def update_events():
     sources.save_events(config)
 
 
-# Resource name (as used in config["update_intervals"]) -> sources updater.
+# Resource name (as used in config["update_intervals"]) -> updater function.
 _RESOURCE_UPDATERS = {
-    "fixtures": "save_fixtures",
-    "events": "save_events",
+    "fixtures": sources.save_fixtures,
+    "events": sources.save_events,
 }
 
 
@@ -57,8 +57,8 @@ def update_all(cfg=config):
     state = sources.load_update_state(cfg)
     changed = False
     for resource, minutes in intervals.items():
-        fn_name = _RESOURCE_UPDATERS.get(resource)
-        if fn_name is None or not minutes:
+        updater = _RESOURCE_UPDATERS.get(resource)
+        if updater is None or not minutes:
             logging.warning("No updater for resource %r; skipping", resource)
             continue
         last = state.get(resource)
@@ -68,7 +68,7 @@ def update_all(cfg=config):
         )
         if due:
             logging.info("Updating %s", resource)
-            getattr(sources, fn_name)(cfg)
+            updater(cfg)
             state[resource] = now.isoformat()
             changed = True
     if changed:
